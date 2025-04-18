@@ -1,4 +1,4 @@
 (executable
- (public_name oauth2_client)
+ (public_name savvy)
  (name main)
- (libraries oauth2_client))
+ (libraries savvy))

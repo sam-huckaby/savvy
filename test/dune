@@ -1,2 +1,2 @@
 (test
- (name test_ocaml_oauth2_client))
+ (name test_savvy))

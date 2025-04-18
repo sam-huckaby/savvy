@@ -1,6 +1,6 @@
 (library
- (name oauth2_client)
- (public_name oauth2_client)
- (modules oauth2_client)
+ (name savvy)
+ (public_name savvy)
+ (modules savvy)
  (libraries cohttp-lwt-unix yojson uri cryptokit ppx_deriving ppx_deriving_yojson)
  (preprocess (pps ppx_deriving.show ppx_deriving_yojson)))

@@ -1,7 +1,7 @@
 open Lwt.Infix
 open Cohttp_lwt_unix
 
-open Oauth2_client
+open Savvy
 
 let callback _conn req _body =
   (* Get the request path *)
