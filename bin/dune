@@ -1,0 +1,4 @@
+(executable
+ (public_name oauth2_client)
+ (name main)
+ (libraries oauth2_client))
