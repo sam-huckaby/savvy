@@ -5,6 +5,8 @@ An easy to use OAuth2 client for your next OCaml app
 
 ## Example usages
 
+Savvy is designed so that you can just open it at the top and leverage whatever you need. The below examples assume you have `open Savvy` at the top of your file, but if you would rather not do that, just add `Savvy.` before the functions (which you can find a list of in `src/savvy.mli`.
+
 ### Client Credentials
 
 ```ocaml
