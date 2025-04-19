@@ -22,7 +22,7 @@ let create flow_type config = {
 }
 
 let get_authorization_url t = Oauth2_client.get_authorization_url t.oauth2_client
-let exchange_code_for_token t code = Oauth2_client.exchange_code_for_token t.oauth2_client code
+let exchange_code_for_token state code = Oauth2_client.exchange_code_for_token state code
 let get_client_credentials_token t = Oauth2_client.get_client_credentials_token t.oauth2_client
 let get_device_code t = Oauth2_client.get_device_code t.oauth2_client
 let poll_for_device_token t device_code = Oauth2_client.poll_for_device_token t.oauth2_client device_code

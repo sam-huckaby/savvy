@@ -169,8 +169,13 @@ type t = {
   config: config;
 }
 
+(* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
+(* NOTE: This should NOT be used in production. Only supports 100 active flows at a time *)
+let auth_store : (string, ( string * config )) Hashtbl.t = Hashtbl.create 100
+
 let create flow_type config = { flow_type; config }
 
+(* TODO: Move this to a utility file somewhere *)
 let form_encode p =
   p |> List.map (fun (k,v) -> Printf.sprintf "%s=%s" k v)
   |> String.concat "&"
@@ -184,6 +189,7 @@ let get_authorization_url t =
     let state = generate_state () in
     (* Determine whether there is a PKCE code_verifier to work with or if we need to make our own *)
     (* In some cases, like when not using PKCE, this value will be disregarded *)
+    (* Ideally, we generate our own PKCE code_verifier, but there may be a case where someone wants to provide their own *)
     let verifier = (match config.pkce_verifier with
     | Some verifier_str -> verifier_str
     | None -> generate_code_verifier ()) in
@@ -199,80 +205,84 @@ let get_authorization_url t =
         | Plain -> [ ("code_challenge", verifier) ; ("code_challenge_method", "plain") ]
         | No_Pkce -> []
     ) in
+    (* Store the things we will need for the second half of this operation *)
+    Hashtbl.replace auth_store state ( verifier, t.config );
     let url = Uri.add_query_params' config.authorization_endpoint params in
-    (* state and verifier will need to be tracked by the user so that they can use them with the token endpoint *)
-    (* TODO: I would like to have some kind of session management solution, so that this library can track these for them *)
     (url, state, verifier)
   | _ -> failwith "Authorization URL only available for Authorization Code flow"
 
-let exchange_code_for_token t code =
-  match t.config with
-  | AuthorizationCodeConfig config -> begin
-    let params = (
-      match config.token_auth_method with
-        | Basic -> [
-            ("grant_type", "authorization_code");
-            ("code", code);
-            ("redirect_uri", Uri.to_string config.redirect_uri);
-          ] @ (
-            match config.pkce_verifier with
-              | Some verifier -> [ ("code_verifier", verifier) ]
-              | None -> []
-          ) 
-        | Body -> [
-            ("grant_type", "authorization_code");
-            ("code", code);
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret); (* Per the RFC, if the client is confidential, it must authenticate with this *)
-            ("redirect_uri", Uri.to_string config.redirect_uri);
-          ] @ (
-            match config.pkce_verifier with
-              | Some verifier -> [ ("code_verifier", verifier) ]
-              | None -> []
-    ) 
-    ) in
-    let body = form_encode params in
-    let headers = (
-      match config.token_auth_method with
-      | Basic -> 
-        Cohttp.Header.of_list [
-          ("Content-Type", "application/x-www-form-urlencoded") ;
-          ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
-        ] 
-      | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
-    ) in
-    Client.post ~headers ~body config.token_endpoint
-    >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
-    >>= fun body_str ->
-    (*
-      Responses should look sort of like this:
-      {
-       "access_token":"2YotnFZFEjr1zCsicMWpAA", <- This will be much longer
-       "token_type":"example",
-       "expires_in":3600,
-       "refresh_token":"tGzv3JOkF0XG5Qx2TlKWIA", <- This will be much longer
-       "example_parameter":"example_value"
-      }
-    *)
-    (* This decoder is created by @@deriving yojson *)
-    let json = Yojson.Safe.from_string body_str in
-    match token_response_of_yojson json with
-    | Ok token -> begin
-      Lwt.return token
-      end
-    | Error _ -> begin
-      match token_error_of_yojson json with
-      | Ok error -> begin
-        print_endline error.error_description;
-        Lwt.fail_with error.error_description
+let exchange_code_for_token state code =
+  match Hashtbl.find_opt auth_store state with
+  | Some (verifier, stored_config) -> begin
+    match stored_config with
+    | AuthorizationCodeConfig config -> begin
+      let params = (
+        match config.token_auth_method with
+          | Basic -> [
+              ("grant_type", "authorization_code");
+              ("code", code);
+              ("redirect_uri", Uri.to_string config.redirect_uri);
+            ] @ (
+              match config.pkce with
+                | No_Pkce -> []
+                | _ -> [ ("code_verifier", verifier) ]
+            ) 
+          | Body -> [
+              ("grant_type", "authorization_code");
+              ("code", code);
+              ("client_id", config.client_id);
+              ("client_secret", config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
+              ("redirect_uri", Uri.to_string config.redirect_uri);
+            ] @ (
+              match config.pkce with
+                | No_Pkce -> []
+                | _ -> [ ("code_verifier", verifier) ]
+            ) 
+      ) in
+      let body = form_encode params in
+      let headers = (
+        match config.token_auth_method with
+        | Basic -> 
+          Cohttp.Header.of_list [
+            ("Content-Type", "application/x-www-form-urlencoded") ;
+            ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
+          ] 
+        | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
+      ) in
+      Client.post ~headers ~body config.token_endpoint
+      >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
+      >>= fun body_str ->
+      (*
+        Responses should look sort of like this:
+        {
+        "access_token":"2YotnFZFEjr1zCsicMWpAA", <- This will be much longer
+        "token_type":"example",
+        "expires_in":3600,
+        "refresh_token":"tGzv3JOkF0XG5Qx2TlKWIA", <- This will be much longer
+        "example_parameter":"example_value"
+        }
+      *)
+      (* This decoder is created by @@deriving yojson *)
+      let json = Yojson.Safe.from_string body_str in
+      match token_response_of_yojson json with
+      | Ok token -> begin
+        Lwt.return token
         end
-      | Error e -> begin
-        print_endline e;
-        Lwt.fail_with e
+      | Error _ -> begin
+        match token_error_of_yojson json with
+        | Ok error -> begin
+          print_endline error.error_description;
+          Lwt.fail_with error.error_description
+          end
+        | Error e -> begin
+          print_endline e;
+          Lwt.fail_with e
+          end
         end
       end
+    | _ -> failwith "Code exchange only available for Authorization Code flow"
     end
-  | _ -> failwith "Code exchange only available for Authorization Code flow"
+  | None -> failwith "State value did not match a known session"
 
 let get_client_credentials_token t =
   match t.config with

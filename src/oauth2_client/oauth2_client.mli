@@ -82,7 +82,7 @@ type t = {
 
 val create : flow_type -> config -> t
 val get_authorization_url : t -> Uri.t * string * string
-val exchange_code_for_token : t -> string -> token_response Lwt.t
+val exchange_code_for_token : string -> string -> token_response Lwt.t
 val get_client_credentials_token : t -> token_response Lwt.t
 val get_device_code : t -> device_code_response Lwt.t
 val poll_for_device_token : t -> device_code_response -> token_response Lwt.t
