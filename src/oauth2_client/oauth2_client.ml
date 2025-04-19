@@ -171,11 +171,26 @@ type t = {
 
 (* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
 (* NOTE: This should NOT be used in production. Only supports 100 active flows at a time *)
-let auth_store : (string, ( string * config )) Hashtbl.t = Hashtbl.create 100
+(* TODO: Maybe move this to a utility module or a specific storage module *)
+let auth_store : (string, ( string * config * float)) Hashtbl.t = Hashtbl.create 100
+
+(* TTL: 24 hours (in seconds) is pretty safely invalid *)
+let ttl = 86400.0
+
+let is_expired created_at =
+  Unix.time () -. created_at > ttl
+
+(* A function to remove all values older than the TTL from memory *)
+let store_cleanup () =
+  Hashtbl.filter_map_inplace
+    (fun _key (_verifier, _config, created_at) ->
+      if is_expired created_at then None
+      else Some (_verifier, _config, created_at))
+    auth_store
 
 let create flow_type config = { flow_type; config }
 
-(* TODO: Move this to a utility file somewhere *)
+(* TODO: Move this to a utility module *)
 let form_encode p =
   p |> List.map (fun (k,v) -> Printf.sprintf "%s=%s" k v)
   |> String.concat "&"
@@ -206,14 +221,17 @@ let get_authorization_url t =
         | No_Pkce -> []
     ) in
     (* Store the things we will need for the second half of this operation *)
-    Hashtbl.replace auth_store state ( verifier, t.config );
+    Hashtbl.replace auth_store state ( verifier, t.config, Unix.time () );
     let url = Uri.add_query_params' config.authorization_endpoint params in
     (url, state, verifier)
   | _ -> failwith "Authorization URL only available for Authorization Code flow"
 
 let exchange_code_for_token state code =
+  (* Go ahead and clean out any old values on every next call *)
+  store_cleanup ();
   match Hashtbl.find_opt auth_store state with
-  | Some (verifier, stored_config) -> begin
+  | Some (verifier, stored_config, _expires) -> begin
+    Hashtbl.remove auth_store state;
     match stored_config with
     | AuthorizationCodeConfig config -> begin
       let params = (
