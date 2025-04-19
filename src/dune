@@ -1,0 +1,5 @@
+(library
+ (name savvy)
+ (public_name savvy)
+ (libraries lwt oauth2_client)
+ (preprocess (pps ppx_deriving_yojson)))

@@ -10,7 +10,7 @@ let callback _conn req _body =
   match path with
   | "/client-creds" -> begin
       (* Each flow type has its own config type so the compiler can tell you forgot things *)
-      let config = ClientCredentialsConfig {
+      let config = Oauth2_client.ClientCredentialsConfig {
         client_id = "your-client-id";
         client_secret = "your-client-secret";
         token_auth_method = Basic; (* Can be Basic or Body - the two places that credentials can live in transit *)
@@ -30,7 +30,7 @@ let callback _conn req _body =
     end
   | "/" -> begin
       (* George, if you're reading this, I swear this is a dummy OAuth2 server I setup just to test that this library works and then I'm going to delete it *)
-      let config = AuthorizationCodeConfig {
+      let config = Oauth2_client.AuthorizationCodeConfig {
         authorization_endpoint = Uri.of_string "https://example.com/authorize";
         client_id = "your-client-id";  (* Replace with your client ID *)
         client_secret = "your-client-secret";  (* Replace with your client secret *)
@@ -53,7 +53,7 @@ let callback _conn req _body =
       match query with
       | Some code -> begin
         (* George, if you're reading this, I swear this is a dummy OAuth2 server I setup just to test that this library works and then I'm going to delete it *)
-        let config = AuthorizationCodeConfig {
+        let config = Oauth2_client.AuthorizationCodeConfig {
           authorization_endpoint = Uri.of_string "https://example.com/authorize";
           client_id = "your-client-id";  (* Replace with your client ID *)
           client_secret = "your-client-secret";  (* Replace with your client secret *)
@@ -64,7 +64,7 @@ let callback _conn req _body =
           token_auth_method = Basic;
           token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
         } in
-        let client = create AuthorizationCode config in
+        let client = create Oauth2_client.AuthorizationCode config in
         exchange_code_for_token client code
         >>= fun token ->
           let token_info = 
