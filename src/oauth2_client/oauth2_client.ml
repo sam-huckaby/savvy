@@ -170,7 +170,7 @@ type t = {
 }
 
 (* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
-(* NOTE: This should NOT be used in production. Only supports 100 active flows at a time *)
+(* NOTE: This should NOT be used in production. *)
 (* TODO: Maybe move this to a utility module or a specific storage module *)
 let auth_store : (string, ( string * config * float)) Hashtbl.t = Hashtbl.create 100
 
