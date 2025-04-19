@@ -29,7 +29,6 @@ let callback _conn req _body =
           Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/client-creds'>Auth Again</a>") ()
     end
   | "/" -> begin
-      (* George, if you're reading this, I swear this is a dummy OAuth2 server I setup just to test that this library works and then I'm going to delete it *)
       let config = Oauth2_client.AuthorizationCodeConfig {
         authorization_endpoint = Uri.of_string "https://example.com/authorize";
         client_id = "your-client-id";  (* Replace with your client ID *)
@@ -52,7 +51,6 @@ let callback _conn req _body =
       let query = Uri.get_query_param uri "code" in
       match query with
       | Some code -> begin
-        (* George, if you're reading this, I swear this is a dummy OAuth2 server I setup just to test that this library works and then I'm going to delete it *)
         let config = Oauth2_client.AuthorizationCodeConfig {
           authorization_endpoint = Uri.of_string "https://example.com/authorize";
           client_id = "your-client-id";  (* Replace with your client ID *)
