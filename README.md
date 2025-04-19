@@ -7,7 +7,7 @@ An easy to use OAuth2 client for your next OCaml app
 
 ### Client Credentials
 
-```
+```ocaml
 let config = Oauth2_client.ClientCredentialsConfig {
   client_id = "your-client-id";
   client_secret = "your-client-secret";
@@ -31,7 +31,7 @@ get_client_credentials_token client;
 
 First you need to construct the authorize URL, so you can pass your config in and have the library generate that for you.
 
-```
+```ocaml
 let config = Oauth2_client.AuthorizationCodeConfig {
   authorization_endpoint = Uri.of_string "https://example.com/authorize";
   client_id = "your-client-id";  (* Replace with your client ID *)
@@ -51,7 +51,7 @@ When generating the authorize URL, you will also receive a state value and a PKC
 
 Because token exchange is a request FROM the OAuth2 server TO your app, it will happen in a separate part of your code. Thus, you will need to create another AuthorizationCodeConfig and client to make your token exchange request like so:
 
-```
+```ocaml
 let uri = Request.uri req in
 let query = Uri.get_query_param uri "code" in
 match query with
