@@ -69,8 +69,8 @@ let callback _conn req _body =
           end
         | None ->
           Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
-      end
-    | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
+        end
+      | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
     end
   | _ -> begin
       (* Handle unknown paths *)

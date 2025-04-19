@@ -38,45 +38,43 @@ let config = Oauth2_client.AuthorizationCodeConfig {
   authorization_endpoint = Uri.of_string "https://example.com/authorize";
   client_id = "your-client-id";  (* Replace with your client ID *)
   client_secret = "your-client-secret";  (* Replace with your client secret *)
-  pkce = S256;
+  pkce = S256; (* Allowed values: S256, Plain, or No_Pkce *)
   pkce_verifier = Some("definitelyrandomandultrasecurestringthatnoonewillguess"); (* Pass None to have it auto-generate? *)
   redirect_uri = Uri.of_string "https://example.com/callback";  (* Replace with your redirect URI *)
   scope = ["bar:create" ; "bar:read" ; "bar:update"];  (* Replace with your desired scopes *)
-  token_auth_method = Basic;
+  token_auth_method = Basic; (* Allowed values: Basic or Body *)
   token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
 } in
 let client = create AuthorizationCode config in
 let (auth_url, _state, _code_verifier) = get_authorization_url client in
 ```
 
-When generating the authorize URL, you will also receive a state value and a PKCE code_verifier. The state value should be stored so that you can check it is the same on the return request to the redirect URI. If your OAuth2 server is configured to use PKCE, then you should store the code_verifier so that you can give it to the config for your token exchange step.
+When generating the authorize URL, you will also receive a state value and a PKCE code_verifier. Savvy will store these (as noted below) but if you need them for an external auth service or because your callback route is being served from another server, you can grab them and stash them wherever you please.
 
-Because token exchange is a request FROM the OAuth2 server TO your app, it will happen in a separate part of your code. Thus, you will need to create another AuthorizationCodeConfig and client to make your token exchange request like so:
+Because token exchange is a request FROM the OAuth2 server TO your app, it will happen in a separate part of your code. Savvy will currently store the PKCE code_verifier and flow config in-memory for you, and use the state parameter to look them up. This means you can just use Savvy in your callback handler and it will work right away.
 
 ```ocaml
 let uri = Request.uri req in
-let query = Uri.get_query_param uri "code" in
-match query with
-| Some code -> begin
-  let config = Oauth2_client.AuthorizationCodeConfig {
-    authorization_endpoint = Uri.of_string "https://example.com/authorize";
-    client_id = "your-client-id";  (* Replace with your client ID *)
-    client_secret = "your-client-secret";  (* Replace with your client secret *)
-    pkce = S256;
-    pkce_verifier = Some("definitelyrandomandultrasecurestringthatnoonewillguess"); (* Pass None to have it auto-generate? *)
-    redirect_uri = Uri.of_string "https://example.com/callback";  (* Replace with your redirect URI *)
-    scope = ["bar:create" ; "bar:read" ; "bar:update"];  (* Replace with your desired scopes *)
-    token_auth_method = Basic;
-    token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
-  } in
-  let client = create Oauth2_client.AuthorizationCode config in
-  exchange_code_for_token client code
-  >>= fun token ->
-    let token_info = 
-      "<p>Auth was successful!</p>" ^
-      "<p>Access Token: " ^ token.access_token ^ "</p>" ^
-      (match token.refresh_token with
-        | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
-        | None -> "") in
+let code_query = Uri.get_query_param uri "code" in
+let state_query = Uri.get_query_param uri "state" in
+(* Here is where you should validate the state from the query params *)
+match state_query with
+| Some state -> begin
+  match code_query with
+  | Some code -> begin
+    exchange_code_for_token state code
+    >>= fun token ->
+      let token_info = 
+        "<p>Auth was successful!</p>" ^
+        "<p>Access Token: " ^ token.access_token ^ "</p>" ^
+        (match token.refresh_token with
+          | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
+          | None -> "") in
+      Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()
+    end
+  | None ->
+    Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
+  end
+| None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
 ```
 
