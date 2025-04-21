@@ -12,25 +12,6 @@ module Uri = struct
     | _ -> Error "expected string for Uri.t"
 end
 
-(* Generate a cryptographically secure random state value *)
-let generate_state () =
-  let open Cryptokit in
-  let rng = Random.device_rng "/dev/urandom" in
-  transform_string (Hexa.encode ()) (Random.string rng 32)
-
-(* Create a code_verifier for PKCE *)
-let generate_code_verifier () =
-  let open Cryptokit in
-  let rng = Random.device_rng "/dev/urandom" in
-  transform_string (Hexa.encode ()) (Random.string rng 128)
-
-let generate_code_challenge verifier =
-  let hasher = Cryptokit.Hash.sha256 () in
-  hasher#add_string verifier;
-  let base64_string = Base64.encode_string ~pad:false hasher#result in
-  (* URLs are so picky, can't have pluses, can't have slashes, can't have pictures, the worst. *)
-  String.map (function '+' -> '-' | '/' -> '_' | c -> c) base64_string
-
 (* Insecure flow types have been purposefully omitted *)
 type flow_type =
   | AuthorizationCode
@@ -169,6 +150,8 @@ type t = {
   config: config;
 }
 
+
+
 (* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
 (* NOTE: This should NOT be used in production. *)
 (* TODO: Maybe move this to a utility module or a specific storage module *)
@@ -188,26 +171,23 @@ let store_cleanup () =
       else Some (_verifier, _config, created_at))
     auth_store
 
-let create flow_type config = { flow_type; config }
 
-(* TODO: Move this to a utility module *)
-let form_encode p =
-  p |> List.map (fun (k,v) -> Printf.sprintf "%s=%s" k v)
-  |> String.concat "&"
-  |> Cohttp_lwt.Body.of_string
+
+
+let create flow_type config = { flow_type; config }
 
 (* This is a helper function to construct the necessary auth url to pass to the user agent *)
 let get_authorization_url t =
   match t.config with
   | AuthorizationCodeConfig config ->
     (* Always generate a nice, safe, random, state value, since humans can't be trusted *)
-    let state = generate_state () in
+    let state = Utils.generate_state () in
     (* Determine whether there is a PKCE code_verifier to work with or if we need to make our own *)
     (* In some cases, like when not using PKCE, this value will be disregarded *)
     (* Ideally, we generate our own PKCE code_verifier, but there may be a case where someone wants to provide their own *)
     let verifier = (match config.pkce_verifier with
     | Some verifier_str -> verifier_str
-    | None -> generate_code_verifier ()) in
+    | None -> Utils.generate_code_verifier ()) in
     let params = [
       ("response_type", "code");
       ("client_id", config.client_id);
@@ -216,7 +196,7 @@ let get_authorization_url t =
       ("state", state);
     ] @ (
       match config.pkce with
-        | S256 -> [ ("code_challenge", generate_code_challenge verifier) ; ("code_challenge_method", "S256") ]
+        | S256 -> [ ("code_challenge", Utils.generate_code_challenge verifier) ; ("code_challenge_method", "S256") ]
         | Plain -> [ ("code_challenge", verifier) ; ("code_challenge_method", "plain") ]
         | No_Pkce -> []
     ) in
@@ -257,7 +237,7 @@ let exchange_code_for_token state code =
                 | _ -> [ ("code_verifier", verifier) ]
             ) 
       ) in
-      let body = form_encode params in
+      let body = Utils.form_encode params in
       let headers = (
         match config.token_auth_method with
         | Basic -> 
@@ -324,7 +304,7 @@ let get_client_credentials_token t =
        - encoded together in for Basic auth in the Authorization header
        For more information: https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1
     *)
-    let body = form_encode params in
+    let body = Utils.form_encode params in
     let headers = (
       match config.token_auth_method with
       | Basic -> Cohttp.Header.of_list [
@@ -360,7 +340,7 @@ let get_device_code t =
       ("client_id", config.client_id);
       ("scope", String.concat " " config.scope);
     ] in
-    let body = form_encode params in
+    let body = Utils.form_encode params in
     let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
     Client.post ~headers ~body config.device_authorization_endpoint
     >>= fun (_, body) ->
@@ -384,7 +364,7 @@ let poll_for_device_token t device_code =
         ("device_code", device_code.device_code);
         ("client_id", config.client_id);
       ] in
-      let body = form_encode params in
+      let body = Utils.form_encode params in
       let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
       Client.post ~headers ~body config.token_endpoint
       >>= fun (_, body) ->
