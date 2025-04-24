@@ -1,5 +1,14 @@
 (library
  (name oauth2_client)
  (public_name savvy.oauth2_client)
- (libraries lwt cohttp-lwt-unix yojson cryptokit base64 utils)
- (preprocess (pps ppx_deriving_yojson)))
+ (libraries
+  cohttp
+  cohttp-lwt
+  cohttp-lwt-unix
+  lwt
+  uri
+  yojson
+  ppx_deriving_yojson.runtime
+  utils)
+ (preprocess
+  (pps ppx_deriving_yojson)))

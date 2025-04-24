@@ -145,127 +145,207 @@ type device_code_response = {
   interval: int;
 } [@@deriving yojson]
 
-type t = {
-  flow_type: flow_type;
-  config: config;
-}
-
-
+(* Any user-defined storage implementation must have at least these three methods *)
+module type STORAGE_UNIT =
+  sig 
+    type t
+    (* When implementing this interface, I recommend doing a clean out of stale values in get *)
+    val get: string -> ( string * config * float ) option
+    val remove: string -> unit
+    val update: string -> ( string * config ) -> unit
+  end
 
 (* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
 (* NOTE: This should NOT be used in production. *)
-(* TODO: Maybe move this to a utility module or a specific storage module *)
-let auth_store : (string, ( string * config * float)) Hashtbl.t = Hashtbl.create 100
+module InMemoryStorage : STORAGE_UNIT =
+  struct
+    type t = (string, (string * config * float)) Hashtbl.t
 
-(* TTL: 24 hours (in seconds) is pretty safely invalid *)
-let ttl = 86400.0
+    let store = Hashtbl.create 100
 
-let is_expired created_at =
-  Unix.time () -. created_at > ttl
+    (* TTL: 1 hour (in seconds) is pretty safely invalid *)
+    let ttl = 3600.0
 
-(* A function to remove all values older than the TTL from memory *)
-let store_cleanup () =
-  Hashtbl.filter_map_inplace
-    (fun _key (_verifier, _config, created_at) ->
-      if is_expired created_at then None
-      else Some (_verifier, _config, created_at))
-    auth_store
+    let is_expired created_at =
+      Unix.time () -. created_at > ttl
 
+    let clean () =
+      Hashtbl.filter_map_inplace
+        (fun _key (_verifier, _config, created_at) ->
+          if is_expired created_at then None
+          else Some (_verifier, _config, created_at))
+        store
 
+    (* Due to sealing, only the below methods are publicly accessible *)
+    let get state = 
+      clean ();
+      Hashtbl.find_opt store state
 
+    let remove state = Hashtbl.remove store state
+    
+    let update state (verifier, config) = Hashtbl.replace store state (verifier, config, Unix.time ())
+  end
 
-let create flow_type config = { flow_type; config }
+module type OAUTH2_CLIENT =
+  sig
+  type t
+  val create : config:config -> t
+  val get_authorization_url : t -> (Uri.t * string * string)
+  val exchange_code_for_token : string -> string -> token_response Lwt.t
+  val get_client_credentials_token : t -> token_response Lwt.t
+  (* Additional flows handled later *)
+end
 
-(* This is a helper function to construct the necessary auth url to pass to the user agent *)
-let get_authorization_url t =
-  match t.config with
-  | AuthorizationCodeConfig config ->
-    (* Always generate a nice, safe, random, state value, since humans can't be trusted *)
-    let state = Utils.generate_state () in
-    (* Determine whether there is a PKCE code_verifier to work with or if we need to make our own *)
-    (* In some cases, like when not using PKCE, this value will be disregarded *)
-    (* Ideally, we generate our own PKCE code_verifier, but there may be a case where someone wants to provide their own *)
-    let verifier = (match config.pkce_verifier with
-    | Some verifier_str -> verifier_str
-    | None -> Utils.generate_code_verifier ()) in
-    let params = [
-      ("response_type", "code");
-      ("client_id", config.client_id);
-      ("redirect_uri", Uri.to_string config.redirect_uri);
-      ("scope", String.concat " " config.scope);
-      ("state", state);
-    ] @ (
-      match config.pkce with
-        | S256 -> [ ("code_challenge", Utils.generate_code_challenge verifier) ; ("code_challenge_method", "S256") ]
-        | Plain -> [ ("code_challenge", verifier) ; ("code_challenge_method", "plain") ]
-        | No_Pkce -> []
-    ) in
-    (* Store the things we will need for the second half of this operation *)
-    Hashtbl.replace auth_store state ( verifier, t.config, Unix.time () );
-    let url = Uri.add_query_params' config.authorization_endpoint params in
-    (url, state, verifier)
-  | _ -> failwith "Authorization URL only available for Authorization Code flow"
-
-let exchange_code_for_token state code =
-  (* Go ahead and clean out any old values on every next call *)
-  store_cleanup ();
-  match Hashtbl.find_opt auth_store state with
-  | Some (verifier, stored_config, _expires) -> begin
-    Hashtbl.remove auth_store state;
-    match stored_config with
-    | AuthorizationCodeConfig config -> begin
+(* Functor to create a client module that users of Savvy will use *)
+module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
+  type t = {
+    config: config;
+  }
+  
+  (* Allow the user to pass in their Storage implementation *)
+  let create ~config = { config; }
+  
+  (* This is a helper function to construct the necessary auth url to pass to the user agent *)
+  let get_authorization_url t =
+    match t.config with
+    | AuthorizationCodeConfig config ->
+      (* Always generate a nice, safe, random, state value, since humans can't be trusted *)
+      let state = Utils.generate_state () in
+      (* Determine whether there is a PKCE code_verifier to work with or if we need to make our own *)
+      (* In some cases, like when not using PKCE, this value will be disregarded *)
+      (* Ideally, we generate our own PKCE code_verifier, but there may be a case where someone wants to provide their own *)
+      let verifier = (match config.pkce_verifier with
+      | Some verifier_str -> verifier_str
+      | None -> Utils.generate_code_verifier ()) in
+      let params = [
+        ("response_type", "code");
+        ("client_id", config.client_id);
+        ("redirect_uri", Uri.to_string config.redirect_uri);
+        ("scope", String.concat " " config.scope);
+        ("state", state);
+      ] @ (
+        match config.pkce with
+          | S256 -> [ ("code_challenge", Utils.generate_code_challenge verifier) ; ("code_challenge_method", "S256") ]
+          | Plain -> [ ("code_challenge", verifier) ; ("code_challenge_method", "plain") ]
+          | No_Pkce -> []
+      ) in
+      (* Store the things we will need for the second half of this operation *)
+      Storage.update state ( verifier, t.config );
+      let url = Uri.add_query_params' config.authorization_endpoint params in
+      (url, state, verifier)
+    | _ -> failwith "Authorization URL only available for Authorization Code flow"
+  
+  let exchange_code_for_token state code =
+    match Storage.get state with
+    | Some (verifier, stored_config, _expires) -> begin
+      Storage.remove state;
+      match stored_config with
+      | AuthorizationCodeConfig config -> begin
+        let params = (
+          match config.token_auth_method with
+            | Basic -> [
+                ("grant_type", "authorization_code");
+                ("code", code);
+                ("redirect_uri", Uri.to_string config.redirect_uri);
+              ] @ (
+                match config.pkce with
+                  | No_Pkce -> []
+                  | _ -> [ ("code_verifier", verifier) ]
+              ) 
+            | Body -> [
+                ("grant_type", "authorization_code");
+                ("code", code);
+                ("client_id", config.client_id);
+                ("client_secret", config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
+                ("redirect_uri", Uri.to_string config.redirect_uri);
+              ] @ (
+                match config.pkce with
+                  | No_Pkce -> []
+                  | _ -> [ ("code_verifier", verifier) ]
+              ) 
+        ) in
+        let body = Utils.form_encode params in
+        let headers = (
+          match config.token_auth_method with
+          | Basic -> 
+            Cohttp.Header.of_list [
+              ("Content-Type", "application/x-www-form-urlencoded") ;
+              ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
+            ] 
+          | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
+        ) in
+        Client.post ~headers ~body config.token_endpoint
+        >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
+        >>= fun body_str ->
+        (*
+          Responses should look sort of like this:
+          {
+          "access_token":"2YotnFZFEjr1zCsicMWpAA", <- This will be much longer
+          "token_type":"example",
+          "expires_in":3600,
+          "refresh_token":"tGzv3JOkF0XG5Qx2TlKWIA", <- This will be much longer
+          "example_parameter":"example_value"
+          }
+        *)
+        (* This decoder is created by @@deriving yojson *)
+        let json = Yojson.Safe.from_string body_str in
+        match token_response_of_yojson json with
+        | Ok token -> begin
+          Lwt.return token
+          end
+        | Error _ -> begin
+          match token_error_of_yojson json with
+          | Ok error -> begin
+            print_endline error.error_description;
+            Lwt.fail_with error.error_description
+            end
+          | Error e -> begin
+            print_endline e;
+            Lwt.fail_with e
+            end
+          end
+        end
+      | _ -> failwith "Code exchange only available for Authorization Code flow"
+      end
+    | None -> failwith "State value did not match a known session"
+  
+  let get_client_credentials_token t =
+    match t.config with
+    | ClientCredentialsConfig config -> begin
       let params = (
         match config.token_auth_method with
           | Basic -> [
-              ("grant_type", "authorization_code");
-              ("code", code);
-              ("redirect_uri", Uri.to_string config.redirect_uri);
-            ] @ (
-              match config.pkce with
-                | No_Pkce -> []
-                | _ -> [ ("code_verifier", verifier) ]
-            ) 
+              ("grant_type", "client_credentials");
+              ("scope", String.concat " " config.scope);
+            ]
           | Body -> [
-              ("grant_type", "authorization_code");
-              ("code", code);
+              ("grant_type", "client_credentials");
               ("client_id", config.client_id);
-              ("client_secret", config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
-              ("redirect_uri", Uri.to_string config.redirect_uri);
-            ] @ (
-              match config.pkce with
-                | No_Pkce -> []
-                | _ -> [ ("code_verifier", verifier) ]
-            ) 
+              ("client_secret", config.client_secret);
+              ("scope", String.concat " " config.scope);
+            ]
       ) in
+      (*
+        There are two methods by which client credentials may be passed:
+        - form-urlencoded in the body
+        - encoded together in for Basic auth in the Authorization header
+        For more information: https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1
+      *)
       let body = Utils.form_encode params in
       let headers = (
         match config.token_auth_method with
-        | Basic -> 
-          Cohttp.Header.of_list [
-            ("Content-Type", "application/x-www-form-urlencoded") ;
-            ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
-          ] 
+        | Basic -> Cohttp.Header.of_list [
+                    ("Content-Type", "application/x-www-form-urlencoded") ;
+                    ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
+                  ]
         | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
       ) in
       Client.post ~headers ~body config.token_endpoint
       >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
       >>= fun body_str ->
-      (*
-        Responses should look sort of like this:
-        {
-        "access_token":"2YotnFZFEjr1zCsicMWpAA", <- This will be much longer
-        "token_type":"example",
-        "expires_in":3600,
-        "refresh_token":"tGzv3JOkF0XG5Qx2TlKWIA", <- This will be much longer
-        "example_parameter":"example_value"
-        }
-      *)
-      (* This decoder is created by @@deriving yojson *)
       let json = Yojson.Safe.from_string body_str in
       match token_response_of_yojson json with
-      | Ok token -> begin
-        Lwt.return token
-        end
+      | Ok token -> Lwt.return token
       | Error _ -> begin
         match token_error_of_yojson json with
         | Ok error -> begin
@@ -278,130 +358,87 @@ let exchange_code_for_token state code =
           end
         end
       end
-    | _ -> failwith "Code exchange only available for Authorization Code flow"
-    end
-  | None -> failwith "State value did not match a known session"
+    | _ -> failwith "Client credentials token only available for Client Credentials flow"
 
-let get_client_credentials_token t =
-  match t.config with
-  | ClientCredentialsConfig config -> begin
-    let params = (
-      match config.token_auth_method with
-        | Basic -> [
-            ("grant_type", "client_credentials");
-            ("scope", String.concat " " config.scope);
-          ]
-        | Body -> [
-            ("grant_type", "client_credentials");
-            ("client_id", config.client_id);
-            ("client_secret", config.client_secret);
-            ("scope", String.concat " " config.scope);
-          ]
-    ) in
-    (*
-      There are two methods by which client credentials may be passed:
-       - form-urlencoded in the body
-       - encoded together in for Basic auth in the Authorization header
-       For more information: https://datatracker.ietf.org/doc/html/rfc6749#section-2.3.1
-    *)
-    let body = Utils.form_encode params in
-    let headers = (
-      match config.token_auth_method with
-      | Basic -> Cohttp.Header.of_list [
-                  ("Content-Type", "application/x-www-form-urlencoded") ;
-                  ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
-                ]
-      | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
-    ) in
-    Client.post ~headers ~body config.token_endpoint
-    >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
-    >>= fun body_str ->
-    let json = Yojson.Safe.from_string body_str in
-    match token_response_of_yojson json with
-    | Ok token -> Lwt.return token
-    | Error _ -> begin
-      match token_error_of_yojson json with
-      | Ok error -> begin
-        print_endline error.error_description;
-        Lwt.fail_with error.error_description
-        end
-      | Error e -> begin
-        print_endline e;
-        Lwt.fail_with e
-        end
-      end
-    end
-  | _ -> failwith "Client credentials token only available for Client Credentials flow"
+(* Implementing refresh_token next *)
 
-let get_device_code t =
-  match t.config with
-  | DeviceCodeConfig config -> begin
-    let params = [
-      ("client_id", config.client_id);
-      ("scope", String.concat " " config.scope);
-    ] in
-    let body = Utils.form_encode params in
-    let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
-    Client.post ~headers ~body config.device_authorization_endpoint
-    >>= fun (_, body) ->
-    Cohttp_lwt.Body.to_string body
-    >>= fun body_str ->
-    match device_code_response_of_yojson (Yojson.Safe.from_string body_str) with
-    | Ok device_code -> Lwt.return device_code
-    | Error e -> begin
-      print_endline e;
-      Lwt.fail_with e
-      end
-    end
-  | _ -> failwith "Device code only available for Device Code flow"
-
-let poll_for_device_token t device_code =
-  match t.config with
-  | DeviceCodeConfig config ->
-    let rec poll () =
-      let params = [
-        ("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
-        ("device_code", device_code.device_code);
-        ("client_id", config.client_id);
-      ] in
-      let body = Utils.form_encode params in
+(*
+  let refresh_token t =
+    match t.config with
+    | RefreshTokenConfig config -> begin
+      let body = [
+        ("grant_type", ["refresh_token"]);
+        ("client_id", [config.client_id]);
+        ("client_secret", [config.client_secret]);
+        ("refresh_token", [config.refresh_token]);
+      ] @ (match config.scope with
+          | Some scope -> [("scope", [String.concat " " scope])]
+          | None -> []) in
       let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
-      Client.post ~headers ~body config.token_endpoint
+      Client.post_form ~headers ~params:body config.token_endpoint
       >>= fun (_, body) ->
       Cohttp_lwt.Body.to_string body
       >>= fun body_str ->
       match token_response_of_yojson (Yojson.Safe.from_string body_str) with
       | Ok token -> Lwt.return token
-      | Error _ ->
-        print_endline "waiting for token...";
-        Lwt_unix.sleep (float_of_int device_code.interval)
-        >>= fun () ->
-        poll ()
-    in
-    poll ()
-  | _ -> failwith "Device token polling only available for Device Code flow"
-
-let refresh_token t =
-  match t.config with
-  | RefreshTokenConfig config -> begin
-    let body = [
-      ("grant_type", ["refresh_token"]);
-      ("client_id", [config.client_id]);
-      ("client_secret", [config.client_secret]);
-      ("refresh_token", [config.refresh_token]);
-    ] @ (match config.scope with
-        | Some scope -> [("scope", [String.concat " " scope])]
-        | None -> []) in
-    let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
-    Client.post_form ~headers ~params:body config.token_endpoint
-    >>= fun (_, body) ->
-    Cohttp_lwt.Body.to_string body
-    >>= fun body_str ->
-    match token_response_of_yojson (Yojson.Safe.from_string body_str) with
-    | Ok token -> Lwt.return token
-    | Error e -> begin
-      print_endline e;
-      Lwt.fail_with e
+      | Error e -> begin
+        print_endline e;
+        Lwt.fail_with e
+        end
       end
-    end
-  | _ -> failwith "Refresh token only available for Refresh Token flow" 
+    | _ -> failwith "Refresh token only available for Refresh Token flow" 
+*)
+
+(* Below are non-standard flows that will be made available later *)
+
+(*  
+  let get_device_code t =
+    match t.config with
+    | DeviceCodeConfig config -> begin
+      let params = [
+        ("client_id", config.client_id);
+        ("scope", String.concat " " config.scope);
+      ] in
+      let body = Utils.form_encode params in
+      let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
+      Client.post ~headers ~body config.device_authorization_endpoint
+      >>= fun (_, body) ->
+      Cohttp_lwt.Body.to_string body
+      >>= fun body_str ->
+      match device_code_response_of_yojson (Yojson.Safe.from_string body_str) with
+      | Ok device_code -> Lwt.return device_code
+      | Error e -> begin
+        print_endline e;
+        Lwt.fail_with e
+        end
+      end
+    | _ -> failwith "Device code only available for Device Code flow"
+  
+  let poll_for_device_token t device_code =
+    match t.config with
+    | DeviceCodeConfig config ->
+      let rec poll () =
+        let params = [
+          ("grant_type", "urn:ietf:params:oauth:grant-type:device_code");
+          ("device_code", device_code.device_code);
+          ("client_id", config.client_id);
+        ] in
+        let body = Utils.form_encode params in
+        let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
+        Client.post ~headers ~body config.token_endpoint
+        >>= fun (_, body) ->
+        Cohttp_lwt.Body.to_string body
+        >>= fun body_str ->
+        match token_response_of_yojson (Yojson.Safe.from_string body_str) with
+        | Ok token -> Lwt.return token
+        | Error _ ->
+          print_endline "waiting for token...";
+          Lwt_unix.sleep (float_of_int device_code.interval)
+          >>= fun () ->
+          poll ()
+      in
+      poll ()
+    | _ -> failwith "Device token polling only available for Device Code flow"
+ *)  
+end
+

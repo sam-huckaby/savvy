@@ -3,6 +3,9 @@ open Cohttp_lwt_unix
 
 open Savvy
 
+(* leverage the basic in-memory storage for demo purposes *)
+module Client = OAuth2Client(InMemoryStorage)
+
 let callback _conn req _body =
   (* Get the request path *)
   let path = Uri.path (Request.uri req) in
@@ -17,8 +20,8 @@ let callback _conn req _body =
         token_endpoint = Uri.of_string "https://example.com/token";
         scope = ["foo:create" ; "foo:read" ; "foo:update"];
       } in
-      let client = create ClientCredentials config in
-      get_client_credentials_token client;
+      let client = Client.create ~config in
+      Client.get_client_credentials_token client;
         >>= fun token ->
           let token_info = 
             "<p>Auth was successful!</p>" ^
@@ -40,11 +43,11 @@ let callback _conn req _body =
         token_auth_method = Basic;
         token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
       } in
-      let client = create AuthorizationCode config in
+      let client = Client.create ~config in
       (* TODO: Let's build an in-memory storage for state/code_verifier that the user can optionally replace *)
       (* This will allow the library to do the checks automatically, and then when the app goes to production *)
       (* The developer will just need to provide their own storage implementation (or risk memory issues) *)
-      let (auth_url, _state, _code_verifier) = get_authorization_url client in
+      let (auth_url, _state, _code_verifier) = Client.get_authorization_url client in
       (* Handle root path *)
       Server.respond_string ~status:`OK ~body:("<a href='" ^ Uri.to_string auth_url ^ "'>Authenticate</a>") ()
     end
@@ -57,7 +60,7 @@ let callback _conn req _body =
       | Some state -> begin
         match code_query with
         | Some code -> begin
-          exchange_code_for_token state code
+          Client.exchange_code_for_token state code
           >>= fun token ->
             let token_info = 
               "<p>Auth was successful!</p>" ^

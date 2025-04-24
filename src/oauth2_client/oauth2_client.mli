@@ -20,11 +20,11 @@ type authorization_code_config = {
   authorization_endpoint: Uri.t;
   client_id: string;
   client_secret: string;
-  pkce: (pkce_style [@default No_Pkce]);
-  pkce_verifier: (string option [@default None]);
+  pkce: pkce_style;
+  pkce_verifier: string option;
   redirect_uri: Uri.t;
   scope: string list;
-  token_auth_method: (token_auth_method [@default Basic]);
+  token_auth_method: token_auth_method;
   token_endpoint: Uri.t;
 } [@@deriving yojson]
 
@@ -32,7 +32,7 @@ type client_credentials_config = {
   client_id: string;
   client_secret: string;
   scope: string list;
-  token_auth_method: (token_auth_method [@default Basic]);
+  token_auth_method: token_auth_method;
   token_endpoint: Uri.t;
 } [@@deriving yojson]
 
@@ -61,9 +61,9 @@ type config =
 type token_response = {
   access_token: string;
   token_type: string;
-  expires_in: (int option [@default None]);
-  refresh_token: (string option [@default None]);
-  scope: (string option [@default None]);
+  expires_in: int option;
+  refresh_token: string option;
+  scope: string option;
 } [@@deriving yojson]
 
 type device_code_response = {
@@ -75,15 +75,27 @@ type device_code_response = {
   interval: int;
 } [@@deriving yojson]
 
-type t = {
-  flow_type: flow_type;
-  config: config;
-}
+(* Any user-defined storage implementation must have at least these three methods *)
+module type STORAGE_UNIT =
+  sig 
+    type t
+    (* When implementing this interface, I recommend doing a clean out of stale values in get *)
+    val get: string -> ( string * config * float ) option
+    val remove: string -> unit
+    val update: string -> ( string * config ) -> unit
+  end
 
-val create : flow_type -> config -> t
-val get_authorization_url : t -> Uri.t * string * string
-val exchange_code_for_token : string -> string -> token_response Lwt.t
-val get_client_credentials_token : t -> token_response Lwt.t
-val get_device_code : t -> device_code_response Lwt.t
-val poll_for_device_token : t -> device_code_response -> token_response Lwt.t
-val refresh_token : t -> token_response Lwt.t 
+module InMemoryStorage : STORAGE_UNIT
+
+module type OAUTH2_CLIENT =
+  sig
+  type t
+  val create : config:config -> t
+  val get_authorization_url : t -> (Uri.t * string * string)
+  val exchange_code_for_token : string -> string -> token_response Lwt.t
+  val get_client_credentials_token : t -> token_response Lwt.t
+  (* Additional flows handled later *)
+end
+
+module OAuth2Client (_ : STORAGE_UNIT) : OAUTH2_CLIENT
+
