@@ -12,7 +12,7 @@ module Uri = struct
     | _ -> Error "expected string for Uri.t"
 end
 
-(* Insecure flow types have been purposefully omitted *)
+(* First flows to build, insecure flow types omitted for now *)
 type flow_type =
   | AuthorizationCode
   | ClientCredentials
@@ -186,52 +186,44 @@ module InMemoryStorage : STORAGE_UNIT =
     let update state (verifier, config) = Hashtbl.replace store state (verifier, config, Unix.time ())
   end
 
+(* This is the completely generic OAuth2 client. Will add modules later for popular providers such as GitHub *)
 module type OAUTH2_CLIENT =
-  sig
-  type t
-  val create : config:config -> t
-  val get_authorization_url : t -> (Uri.t * string * string)
+sig
+  val get_authorization_url : config:config -> (Uri.t * string * string)
   val exchange_code_for_token : string -> string -> token_response Lwt.t
-  val get_client_credentials_token : t -> token_response Lwt.t
+  val get_client_credentials_token : config:config -> token_response Lwt.t
   (* Additional flows handled later *)
 end
 
 (* Functor to create a client module that users of Savvy will use *)
 module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
-  type t = {
-    config: config;
-  }
-  
-  (* Allow the user to pass in their Storage implementation *)
-  let create ~config = { config; }
-  
   (* This is a helper function to construct the necessary auth url to pass to the user agent *)
-  let get_authorization_url t =
-    match t.config with
-    | AuthorizationCodeConfig config ->
+  let get_authorization_url ~config =
+    match config with
+    | AuthorizationCodeConfig ac_config ->
       (* Always generate a nice, safe, random, state value, since humans can't be trusted *)
       let state = Utils.generate_state () in
       (* Determine whether there is a PKCE code_verifier to work with or if we need to make our own *)
       (* In some cases, like when not using PKCE, this value will be disregarded *)
       (* Ideally, we generate our own PKCE code_verifier, but there may be a case where someone wants to provide their own *)
-      let verifier = (match config.pkce_verifier with
+      let verifier = (match ac_config.pkce_verifier with
       | Some verifier_str -> verifier_str
       | None -> Utils.generate_code_verifier ()) in
       let params = [
         ("response_type", "code");
-        ("client_id", config.client_id);
-        ("redirect_uri", Uri.to_string config.redirect_uri);
-        ("scope", String.concat " " config.scope);
+        ("client_id", ac_config.client_id);
+        ("redirect_uri", Uri.to_string ac_config.redirect_uri);
+        ("scope", String.concat " " ac_config.scope);
         ("state", state);
       ] @ (
-        match config.pkce with
+        match ac_config.pkce with
           | S256 -> [ ("code_challenge", Utils.generate_code_challenge verifier) ; ("code_challenge_method", "S256") ]
           | Plain -> [ ("code_challenge", verifier) ; ("code_challenge_method", "plain") ]
           | No_Pkce -> []
       ) in
       (* Store the things we will need for the second half of this operation *)
-      Storage.update state ( verifier, t.config );
-      let url = Uri.add_query_params' config.authorization_endpoint params in
+      Storage.update state ( verifier, config );
+      let url = Uri.add_query_params' ac_config.authorization_endpoint params in
       (url, state, verifier)
     | _ -> failwith "Authorization URL only available for Authorization Code flow"
   
@@ -247,22 +239,18 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
                 ("grant_type", "authorization_code");
                 ("code", code);
                 ("redirect_uri", Uri.to_string config.redirect_uri);
-              ] @ (
-                match config.pkce with
-                  | No_Pkce -> []
-                  | _ -> [ ("code_verifier", verifier) ]
-              ) 
+              ]
             | Body -> [
                 ("grant_type", "authorization_code");
                 ("code", code);
                 ("client_id", config.client_id);
                 ("client_secret", config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
                 ("redirect_uri", Uri.to_string config.redirect_uri);
-              ] @ (
-                match config.pkce with
-                  | No_Pkce -> []
-                  | _ -> [ ("code_verifier", verifier) ]
-              ) 
+              ]
+        ) @ (
+          match config.pkce with
+            | No_Pkce -> []
+            | _ -> [ ("code_verifier", verifier) ]
         ) in
         let body = Utils.form_encode params in
         let headers = (
@@ -277,16 +265,6 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
         Client.post ~headers ~body config.token_endpoint
         >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
         >>= fun body_str ->
-        (*
-          Responses should look sort of like this:
-          {
-          "access_token":"2YotnFZFEjr1zCsicMWpAA", <- This will be much longer
-          "token_type":"example",
-          "expires_in":3600,
-          "refresh_token":"tGzv3JOkF0XG5Qx2TlKWIA", <- This will be much longer
-          "example_parameter":"example_value"
-          }
-        *)
         (* This decoder is created by @@deriving yojson *)
         let json = Yojson.Safe.from_string body_str in
         match token_response_of_yojson json with
@@ -309,20 +287,20 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       end
     | None -> failwith "State value did not match a known session"
   
-  let get_client_credentials_token t =
-    match t.config with
-    | ClientCredentialsConfig config -> begin
+  let get_client_credentials_token ~config =
+    match config with
+    | ClientCredentialsConfig cc_config -> begin
       let params = (
-        match config.token_auth_method with
+        match cc_config.token_auth_method with
           | Basic -> [
               ("grant_type", "client_credentials");
-              ("scope", String.concat " " config.scope);
+              ("scope", String.concat " " cc_config.scope);
             ]
           | Body -> [
               ("grant_type", "client_credentials");
-              ("client_id", config.client_id);
-              ("client_secret", config.client_secret);
-              ("scope", String.concat " " config.scope);
+              ("client_id", cc_config.client_id);
+              ("client_secret", cc_config.client_secret);
+              ("scope", String.concat " " cc_config.scope);
             ]
       ) in
       (*
@@ -333,14 +311,14 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       *)
       let body = Utils.form_encode params in
       let headers = (
-        match config.token_auth_method with
+        match cc_config.token_auth_method with
         | Basic -> Cohttp.Header.of_list [
                     ("Content-Type", "application/x-www-form-urlencoded") ;
-                    ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
+                    ("Authorization", "Basic " ^ (Base64.encode_string (cc_config.client_id ^ ":" ^ cc_config.client_secret)))
                   ]
         | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
       ) in
-      Client.post ~headers ~body config.token_endpoint
+      Client.post ~headers ~body cc_config.token_endpoint
       >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
       >>= fun body_str ->
       let json = Yojson.Safe.from_string body_str in
@@ -389,7 +367,7 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
     | _ -> failwith "Refresh token only available for Refresh Token flow" 
 *)
 
-(* Below are non-standard flows that will be made available later *)
+(* Below are less common flows that will be made available later *)
 
 (*  
   let get_device_code t =

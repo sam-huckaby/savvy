@@ -6,6 +6,19 @@ open Savvy
 (* leverage the basic in-memory storage for demo purposes *)
 module Client = OAuth2Client(InMemoryStorage)
 
+(* A custom module might look something like this: *)
+(*
+module CustomStorage : STORAGE_UNIT = struct
+  type t
+  let storage_file = "oauth2_storage.txt"
+  let get state_value = (* Use state_value to retrieve (code_verifier, config, expiration) *)
+  let remove state_value = ()
+  let update state_value (string * config) = ()
+end
+*)
+
+(* This is an oversimplified http server to just demonstrate how things are laid out *)
+(* It is however a _working_ example if you have an OAuth2 Server to point it to *)
 let callback _conn req _body =
   (* Get the request path *)
   let path = Uri.path (Request.uri req) in
@@ -16,12 +29,11 @@ let callback _conn req _body =
       let config = Oauth2_client.ClientCredentialsConfig {
         client_id = "your-client-id";
         client_secret = "your-client-secret";
-        token_auth_method = Basic; (* Can be Basic or Body - the two places that credentials can live in transit *)
-        token_endpoint = Uri.of_string "https://example.com/token";
         scope = ["foo:create" ; "foo:read" ; "foo:update"];
+        token_auth_method = Basic; (* Can be Basic or Body - the two places that credentials can live in transit *)
+        token_endpoint = Uri.of_string "https://example.com/token"; (* Client Credentials flow goes straight to the token endpoint *)
       } in
-      let client = Client.create ~config in
-      Client.get_client_credentials_token client;
+      Client.get_client_credentials_token ~config
         >>= fun token ->
           let token_info = 
             "<p>Auth was successful!</p>" ^
@@ -40,15 +52,10 @@ let callback _conn req _body =
         pkce_verifier = Some("definitelyrandomandultrasecurestringthatnoonewillguess"); (* Pass None to have it auto-generate which is more secure *)
         redirect_uri = Uri.of_string "https://example.com/callback";  (* Replace with your redirect URI *)
         scope = ["bar:create" ; "bar:read" ; "bar:update"];  (* Replace with your desired scopes *)
-        token_auth_method = Basic;
+        token_auth_method = Basic; (* Can be Basic or Body, depending on whether you are putting credentials in a basic header or the body *)
         token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
       } in
-      let client = Client.create ~config in
-      (* TODO: Let's build an in-memory storage for state/code_verifier that the user can optionally replace *)
-      (* This will allow the library to do the checks automatically, and then when the app goes to production *)
-      (* The developer will just need to provide their own storage implementation (or risk memory issues) *)
-      let (auth_url, _state, _code_verifier) = Client.get_authorization_url client in
-      (* Handle root path *)
+      let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
       Server.respond_string ~status:`OK ~body:("<a href='" ^ Uri.to_string auth_url ^ "'>Authenticate</a>") ()
     end
   | "/callback" -> begin
