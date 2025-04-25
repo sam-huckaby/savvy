@@ -1,2 +1,3 @@
 (test
+ (libraries savvy)
  (name test_savvy))
