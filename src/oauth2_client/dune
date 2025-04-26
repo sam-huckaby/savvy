@@ -2,6 +2,7 @@
  (name oauth2_client)
  (public_name savvy.oauth2_client)
  (libraries
+  base64
   cohttp
   cohttp-lwt
   cohttp-lwt-unix
