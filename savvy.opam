@@ -13,6 +13,7 @@ bug-reports: "https://github.com/sam-huckaby/savvy/issues"
 depends: [
   "ocaml"
   "dune" {>= "3.16"}
+  "base64"
   "cohttp-lwt-unix"
   "yojson"
   "uri"

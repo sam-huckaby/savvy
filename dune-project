@@ -22,6 +22,7 @@
  (depends
   ocaml
   dune
+  base64
   cohttp-lwt-unix
   yojson
   uri
