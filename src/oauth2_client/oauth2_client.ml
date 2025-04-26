@@ -87,6 +87,7 @@ type refresh_token_config = {
   token_endpoint: Uri.t;
   refresh_token: string;
   scope: string list option;
+  token_auth_method: (token_auth_method [@default Basic]);
 } [@@deriving yojson]
 
 type config =
@@ -192,6 +193,7 @@ sig
   val get_authorization_url : config:config -> (Uri.t * string * string)
   val exchange_code_for_token : string -> string -> token_response Lwt.t
   val get_client_credentials_token : config:config -> token_response Lwt.t
+  val refresh_token : config:config -> token_response Lwt.t
   (* Additional flows handled later *)
 end
 
@@ -338,6 +340,48 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       end
     | _ -> failwith "Client credentials token only available for Client Credentials flow"
 
+  let refresh_token ~config =
+    match config with
+    | RefreshTokenConfig refresh_config -> begin
+      let params = (
+        [
+          ("grant_type", "refresh_token");
+          ("refresh_token", refresh_config.refresh_token);
+        ]
+      ) @ (
+        match refresh_config.token_auth_method with
+          | Basic -> []
+          | Body -> [
+              ("client_id", refresh_config.client_id);
+              ("client_secret", refresh_config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
+            ]
+      ) @ (match refresh_config.scope with
+          (* The refresh_token scopes MUST NOT include any NEW scopes to the access_token *)
+          (* For more info: https://datatracker.ietf.org/doc/html/rfc6749#section-6 *)
+          | Some scopes -> [("scope", String.concat " " scopes)]
+          | None -> []) in
+      let body = Utils.form_encode params in
+      let headers = (
+        match refresh_config.token_auth_method with
+        | Basic -> 
+          Cohttp.Header.of_list [
+            ("Content-Type", "application/x-www-form-urlencoded") ;
+            ("Authorization", "Basic " ^ (Base64.encode_string (refresh_config.client_id ^ ":" ^ refresh_config.client_secret)))
+          ] 
+        | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
+      ) in
+      Client.post ~headers ~body refresh_config.token_endpoint
+      >>= fun (_, body) ->
+      Cohttp_lwt.Body.to_string body
+      >>= fun body_str ->
+      match token_response_of_yojson (Yojson.Safe.from_string body_str) with
+      | Ok token -> Lwt.return token
+      | Error e -> begin
+        print_endline e;
+        Lwt.fail_with e
+        end
+      end
+    | _ -> failwith "Refresh token only available for Refresh Token flow"
 (* Implementing refresh_token next *)
 
 (*

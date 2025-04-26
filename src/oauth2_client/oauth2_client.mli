@@ -49,6 +49,7 @@ type refresh_token_config = {
   token_endpoint: Uri.t;
   refresh_token: string;
   scope: string list option;
+  token_auth_method: (token_auth_method [@default Basic]);
 } [@@deriving yojson]
 
 type config =
@@ -92,6 +93,7 @@ module type OAUTH2_CLIENT =
   val get_authorization_url : config:config -> (Uri.t * string * string)
   val exchange_code_for_token : string -> string -> token_response Lwt.t
   val get_client_credentials_token : config:config -> token_response Lwt.t
+  val refresh_token : config:config -> token_response Lwt.t
   (* Additional flows handled later *)
 end
 
