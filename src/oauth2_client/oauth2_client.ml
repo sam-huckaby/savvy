@@ -112,6 +112,7 @@ type token_error_code =
   | Unauthorized_Client
   | Unsupported_Grant_Type
   | Invalid_Scope
+  | Invalid_Token
 
 let token_error_code_to_yojson = function
   | Invalid_Request -> `String "invalid_request"
@@ -120,6 +121,7 @@ let token_error_code_to_yojson = function
   | Unauthorized_Client -> `String "unauthorized_client"
   | Unsupported_Grant_Type -> `String "unsupported_grant_type"
   | Invalid_Scope -> `String "invalid_scope"
+  | Invalid_Token -> `String "invalid_token"
 
 let token_error_code_of_yojson = function
   | `String "invalid_request" -> Ok Invalid_Request
@@ -128,6 +130,7 @@ let token_error_code_of_yojson = function
   | `String "unauthorized_client" -> Ok Unauthorized_Client
   | `String "unsupported_grant_type" -> Ok Unsupported_Grant_Type
   | `String "invalid_scope" -> Ok Invalid_Scope
+  | `String "invalid_token" -> Ok Invalid_Token
   | `String _ -> Ok Invalid_Request (* Default to Basic for unknown values *)
   | _ -> Error "expected string for error code"
 
