@@ -377,11 +377,20 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       >>= fun (_, body) ->
       Cohttp_lwt.Body.to_string body
       >>= fun body_str ->
-      match token_response_of_yojson (Yojson.Safe.from_string body_str) with
+      let json = Yojson.Safe.from_string body_str in
+      match token_response_of_yojson json with
       | Ok token -> Lwt.return token
-      | Error e -> begin
-        print_endline e;
-        Lwt.fail_with e
+      | Error _ -> begin
+        match token_error_of_yojson json with
+        | Ok error -> begin
+          print_endline error.error_description;
+          Lwt.fail_with error.error_description
+          end
+        | Error e -> begin
+          (* We error'd trying to read the error - there be dragons *)
+          print_endline e;
+          Lwt.fail_with e
+          end
         end
       end
     | _ -> failwith "Refresh token only available for Refresh Token flow"
