@@ -16,8 +16,10 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
+  
 
 let () =
   print_endline "===========================================================================";
@@ -33,8 +35,10 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
+
 
 let () =
   print_endline "===========================================================================";
@@ -50,8 +54,9 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
 
 let () =
   print_endline "===========================================================================";
@@ -67,8 +72,9 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
 
 let () =
   print_endline "===========================================================================";
@@ -84,8 +90,9 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
 
 let () =
   print_endline "===========================================================================";
@@ -101,8 +108,9 @@ let () =
     token_auth_method = Body;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
 
 let () =
   print_endline "===========================================================================";
@@ -118,5 +126,6 @@ let () =
     token_auth_method = Basic;
     token_endpoint = Uri.of_string "https://example.com/token";
   } in
-  let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-  Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  match Client.get_authorization_url ~config with
+  | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)

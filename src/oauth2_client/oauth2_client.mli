@@ -90,9 +90,9 @@ module InMemoryStorage : STORAGE_UNIT
 
 module type OAUTH2_CLIENT =
   sig
-  val get_authorization_url : config:config -> (Uri.t * string * string)
-  val exchange_code_for_token : string -> string -> token_response Lwt.t
-  val get_client_credentials_token : config:config -> token_response Lwt.t
+  val get_authorization_url : config:config -> ((Uri.t * string * string), string) result
+  val exchange_code_for_token : string -> string -> (token_response, string) result Lwt.t
+  val get_client_credentials_token : config:config -> (token_response, string) result Lwt.t
   val refresh_token : config:config -> (token_response, string) result Lwt.t
   (* Additional flows handled later *)
 end

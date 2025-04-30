@@ -193,9 +193,9 @@ module InMemoryStorage : STORAGE_UNIT =
 (* This is the completely generic OAuth2 client. Will add modules later for popular providers such as GitHub *)
 module type OAUTH2_CLIENT =
 sig
-  val get_authorization_url : config:config -> (Uri.t * string * string)
-  val exchange_code_for_token : string -> string -> token_response Lwt.t
-  val get_client_credentials_token : config:config -> token_response Lwt.t
+  val get_authorization_url : config:config -> ((Uri.t * string * string), string) result
+  val exchange_code_for_token : string -> string -> (token_response, string) result Lwt.t
+  val get_client_credentials_token : config:config -> (token_response, string) result Lwt.t
   val refresh_token : config:config -> (token_response, string) result Lwt.t
   (* Additional flows handled later *)
 end
@@ -229,8 +229,8 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       (* Store the things we will need for the second half of this operation *)
       Storage.update state ( verifier, config );
       let url = Uri.add_query_params' ac_config.authorization_endpoint params in
-      (url, state, verifier)
-    | _ -> failwith "Authorization URL only available for Authorization Code flow"
+      Ok (url, state, verifier)
+    | _ -> Error "Authorization URL only available for Authorization Code flow"
   
   let exchange_code_for_token state code =
     match Storage.get state with
@@ -274,23 +274,23 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
         let json = Yojson.Safe.from_string body_str in
         match token_response_of_yojson json with
         | Ok token -> begin
-          Lwt.return token
+          Lwt.return (Ok token)
           end
         | Error _ -> begin
           match token_error_of_yojson json with
           | Ok error -> begin
             print_endline error.error_description;
-            Lwt.fail_with error.error_description
+            Lwt.return (Error error.error_description)
             end
           | Error e -> begin
             print_endline e;
-            Lwt.fail_with e
+            Lwt.return (Error e)
             end
           end
         end
-      | _ -> failwith "Code exchange only available for Authorization Code flow"
+      | _ -> Lwt.return (Error "Code exchange only available for Authorization Code flow")
       end
-    | None -> failwith "State value did not match a known session"
+    | None -> Lwt.return (Error "State value did not match a known session")
   
   let get_client_credentials_token ~config =
     match config with
@@ -328,20 +328,20 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       >>= fun body_str ->
       let json = Yojson.Safe.from_string body_str in
       match token_response_of_yojson json with
-      | Ok token -> Lwt.return token
+      | Ok token -> Lwt.return (Ok token)
       | Error _ -> begin
         match token_error_of_yojson json with
         | Ok error -> begin
           print_endline error.error_description;
-          Lwt.fail_with error.error_description
+          Lwt.return (Error error.error_description)
           end
         | Error e -> begin
           print_endline e;
-          Lwt.fail_with e
+          Lwt.return (Error e)
           end
         end
       end
-    | _ -> failwith "Client credentials token only available for Client Credentials flow"
+    | _ -> Lwt.return (Error "Client credentials token only available for Client Credentials flow")
 
   let refresh_token ~config =
     match config with

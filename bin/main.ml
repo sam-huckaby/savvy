@@ -34,7 +34,9 @@ let callback _conn req _body =
         token_endpoint = Uri.of_string "https://example.com/token"; (* Client Credentials flow goes straight to the token endpoint *)
       } in
       Client.get_client_credentials_token ~config
-        >>= fun token ->
+        >>= fun token_result ->
+        match token_result with
+        | Ok token ->
           let token_info = 
             "<p>Auth was successful!</p>" ^
             "<p>Access Token: " ^ token.access_token ^ "</p>" ^
@@ -42,6 +44,7 @@ let callback _conn req _body =
               | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
               | None -> "") in
           Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/client-creds'>Auth Again</a>") ()
+        | Error message -> Server.respond_string ~status:`OK ~body:("Your princess is in another castle: " ^ message) ()
     end
   | "/" -> begin
       let config = Oauth2_client.AuthorizationCodeConfig {
@@ -55,8 +58,9 @@ let callback _conn req _body =
         token_auth_method = Basic; (* Can be Basic or Body, depending on whether you are putting credentials in a basic header or the body *)
         token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
       } in
-      let (auth_url, _state, _code_verifier) = Client.get_authorization_url ~config in
-      Server.respond_string ~status:`OK ~body:("<a href='" ^ Uri.to_string auth_url ^ "'>Authenticate</a>") ()
+      match Client.get_authorization_url ~config with
+      | Ok (auth_url, _state, _code_verifier) -> Server.respond_string ~status:`OK ~body:("<a href='" ^ Uri.to_string auth_url ^ "'>Authenticate</a>") ()
+      | Error message -> Server.respond_string ~status:`OK ~body:("You've got problems: " ^ message) ()
     end
   | "/callback" -> begin
       let uri = Request.uri req in
@@ -68,7 +72,9 @@ let callback _conn req _body =
         match code_query with
         | Some code -> begin
           Client.exchange_code_for_token state code
-          >>= fun token ->
+          >>= fun token_result ->
+            match token_result with
+            | Ok token -> begin
             let token_info = 
               "<p>Auth was successful!</p>" ^
               "<p>Access Token: " ^ token.access_token ^ "</p>" ^
@@ -76,6 +82,8 @@ let callback _conn req _body =
                 | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
                 | None -> "") in
             Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()
+          end
+            | Error message -> Server.respond_string ~status:`OK ~body:("Authorization failed: " ^ message) ()
           end
         | None ->
           Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
