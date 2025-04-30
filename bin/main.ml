@@ -87,20 +87,23 @@ let callback _conn req _body =
         client_id = "your-client-id";  (* Replace with your client ID *)
         client_secret = "your-client-secret";  (* Replace with your client secret *)
         refresh_token = "your-refresh-token"; (* Replace with the refresh token you saved for your user *)
-        scope = Some(["bar:create" ; "bar:read" ; "bar:update"]);  (* Replace with your desired scopes *)
+        scope = Some(["bar:create" ; "bar:read" ; "bar:update"]);  (* Replace with the same or a more restrictive set of scopes that the access_token has already *)
         token_endpoint = Uri.of_string "https://example.com/token";  (* Replace with your token endpoint *)
         token_auth_method = Basic; (* Can be Basic or Body, depending on whether you are putting credentials in a basic header or the body *)
       } in
       Client.refresh_token ~config;
-      >>= fun token ->
-        let token_info = 
+      >>= fun token_result ->
+        match token_result with
+        | Ok token -> begin
+          let token_info = 
               "<p>Refresh was successful!</p>" ^
               "<p>Access Token: " ^ token.access_token ^ "</p>" ^
               (match token.refresh_token with
                 | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
                 | None -> "") in
             Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()      (* Get our refresh_token (maybe in memory, in the session, etc *)
-      (*  *)
+          end
+        | Error message -> Server.respond_string ~status:`OK ~body:("There was an error: " ^ message) ()
     end
   | _ -> begin
       (* Handle unknown paths *)

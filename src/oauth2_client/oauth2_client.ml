@@ -196,7 +196,7 @@ sig
   val get_authorization_url : config:config -> (Uri.t * string * string)
   val exchange_code_for_token : string -> string -> token_response Lwt.t
   val get_client_credentials_token : config:config -> token_response Lwt.t
-  val refresh_token : config:config -> token_response Lwt.t
+  val refresh_token : config:config -> (token_response, string) result Lwt.t
   (* Additional flows handled later *)
 end
 
@@ -379,21 +379,21 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
       >>= fun body_str ->
       let json = Yojson.Safe.from_string body_str in
       match token_response_of_yojson json with
-      | Ok token -> Lwt.return token
+      | Ok token -> Lwt.return (Ok token)
       | Error _ -> begin
         match token_error_of_yojson json with
         | Ok error -> begin
           print_endline error.error_description;
-          Lwt.fail_with error.error_description
+          Lwt.return (Error error.error_description)
           end
         | Error e -> begin
           (* We error'd trying to read the error - there be dragons *)
           print_endline e;
-          Lwt.fail_with e
+          Lwt.return (Error e)
           end
         end
       end
-    | _ -> failwith "Refresh token only available for Refresh Token flow"
+    | _ -> Lwt.return (Error "Refresh token only available for Refresh Token flow")
 (* Implementing refresh_token next *)
 
 (*
