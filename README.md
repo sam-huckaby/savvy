@@ -38,7 +38,7 @@ First you need to construct the authorize URL, so you can pass your config in an
 let config = Oauth2_client.AuthorizationCodeConfig {
   authorization_endpoint = Uri.of_string "https://example.com/authorize";
   client_id = "your-client-id";  (* Replace with your client ID *)
-  client_secret = "your-client-secret";  (* Replace with your client secret *)
+  client_secret = Some "your-client-secret";  (* Replace with your client secret or None if a public client *)
   pkce = S256; (* Allowed values: S256, Plain, No_Pkce *)
   pkce_verifier = None; (* Pass None to have it auto-generate which is more secure *)
   redirect_uri = Uri.of_string "https://example.com/callback";  (* Replace with your redirect URI *)
