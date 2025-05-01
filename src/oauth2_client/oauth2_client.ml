@@ -242,17 +242,18 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
           match config.token_auth_method with
             | Basic -> [
                 ("grant_type", "authorization_code");
+                ("client_id", config.client_id);
                 ("code", code);
                 ("redirect_uri", Uri.to_string config.redirect_uri);
               ]
             | Body -> [
                 ("grant_type", "authorization_code");
+                ("client_id", config.client_id);
                 ("code", code);
                 ("redirect_uri", Uri.to_string config.redirect_uri);
           ] @ (
               match config.client_secret with
               | Some secret -> [
-                  ("client_id", config.client_id);
                   ("client_secret", secret); (* Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
                 ]
               | None -> []
