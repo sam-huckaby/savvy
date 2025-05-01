@@ -19,7 +19,7 @@ type pkce_style =
 type authorization_code_config = {
   authorization_endpoint: Uri.t;
   client_id: string;
-  client_secret: string;
+  client_secret: string option;
   pkce: pkce_style;
   pkce_verifier: string option;
   redirect_uri: Uri.t;

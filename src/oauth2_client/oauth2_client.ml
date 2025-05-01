@@ -54,7 +54,7 @@ let pkce_style_of_yojson = function
 type authorization_code_config = {
   authorization_endpoint: Uri.t;
   client_id: string;
-  client_secret: string;
+  client_secret: string option;
   (* For more information about the PKCE protocol: https://datatracker.ietf.org/doc/html/rfc7636 *)
   pkce: (pkce_style [@default No_Pkce]);
   pkce_verifier: (string option [@default None]);
@@ -248,10 +248,15 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
             | Body -> [
                 ("grant_type", "authorization_code");
                 ("code", code);
-                ("client_id", config.client_id);
-                ("client_secret", config.client_secret); (* TODO: Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
                 ("redirect_uri", Uri.to_string config.redirect_uri);
-              ]
+          ] @ (
+              match config.client_secret with
+              | Some secret -> [
+                  ("client_id", config.client_id);
+                  ("client_secret", secret); (* Per the RFC, ONLY if the client is confidential, it must authenticate with this *)
+                ]
+              | None -> []
+            )
         ) @ (
           match config.pkce with
             | No_Pkce -> []
@@ -261,10 +266,15 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
         let headers = (
           match config.token_auth_method with
           | Basic -> 
-            Cohttp.Header.of_list [
+            Cohttp.Header.of_list ([
               ("Content-Type", "application/x-www-form-urlencoded") ;
-              ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ config.client_secret)))
-            ] 
+            ] @ (
+              match config.client_secret with
+              | Some secret -> [
+              ("Authorization", "Basic " ^ (Base64.encode_string (config.client_id ^ ":" ^ secret)))
+              ]
+              | None -> []
+            ))
           | Body -> Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded"
         ) in
         Client.post ~headers ~body config.token_endpoint
