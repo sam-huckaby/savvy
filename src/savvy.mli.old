@@ -1,0 +1,27 @@
+(* When implementing this interface, be sure to handle cleaning stale entries somehow *)
+module type GITHUB_CLIENT =
+  sig
+    val get_authorization_url : config:Github.config -> ((Uri.t * string), string) result
+  end
+
+module type OAUTH2_CLIENT =
+  sig
+    val get_authorization_url : config:Oauth2_client.config -> ((Uri.t * string * string), string) result
+    val exchange_code_for_token : string -> string -> (Oauth2_client.token_response, string) result Lwt.t
+    val get_client_credentials_token : config:Oauth2_client.config -> (Oauth2_client.token_response, string) result Lwt.t
+    val refresh_token : config:Oauth2_client.config -> (Oauth2_client.token_response, string) result Lwt.t
+    (* Additional flows handled later *)
+  end
+
+module MakeInMemoryStorage :
+  functor (V : sig
+    type value
+    val ttl : float
+  end) -> Storage.STORAGE_UNIT with type value = V.value
+
+module InMemoryStorage : Storage.STORAGE_UNIT with type value = Oauth2_client.config
+
+module OAuth2Client (_ : Storage.STORAGE_UNIT) : OAUTH2_CLIENT
+
+module GitHubClient (_ : Storage.STORAGE_UNIT) : GITHUB_CLIENT
+

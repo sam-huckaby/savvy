@@ -1,0 +1,6 @@
+(library
+ (name storage)
+ (public_name savvy.storage)
+ (libraries json_uri)
+ (preprocess (pps ppx_deriving_yojson)))
+

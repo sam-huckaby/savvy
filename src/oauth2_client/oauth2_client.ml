@@ -149,46 +149,10 @@ type device_code_response = {
   interval: int;
 } [@@deriving yojson]
 
-(* Any user-defined storage implementation must have at least these three methods *)
-module type STORAGE_UNIT =
-  sig 
-    type t
-    (* When implementing this interface, I recommend doing a clean out of stale values in get *)
-    val get: string -> ( string * config * float ) option
-    val remove: string -> unit
-    val update: string -> ( string * config ) -> unit
-  end
-
-(* Shared in-memory Hashtbl that uses state values as keys and stores code_verifiers and configs *)
-(* NOTE: This should NOT be used in production. *)
-module InMemoryStorage : STORAGE_UNIT =
-  struct
-    type t = (string, (string * config * float)) Hashtbl.t
-
-    let store = Hashtbl.create 100
-
-    (* TTL: 1 hour (in seconds) is pretty safely invalid *)
-    let ttl = 3600.0
-
-    let is_expired created_at =
-      Unix.time () -. created_at > ttl
-
-    let clean () =
-      Hashtbl.filter_map_inplace
-        (fun _key (_verifier, _config, created_at) ->
-          if is_expired created_at then None
-          else Some (_verifier, _config, created_at))
-        store
-
-    (* Due to sealing, only the below methods are publicly accessible *)
-    let get state = 
-      clean ();
-      Hashtbl.find_opt store state
-
-    let remove state = Hashtbl.remove store state
-    
-    let update state (verifier, config) = Hashtbl.replace store state (verifier, config, Unix.time ())
-  end
+module DefaultInMemoryStorage = struct
+  type value = string * config
+  let ttl = 3600.0
+end
 
 (* This is the completely generic OAuth2 client. Will add modules later for popular providers such as GitHub *)
 module type OAUTH2_CLIENT =
@@ -201,7 +165,7 @@ sig
 end
 
 (* Functor to create a client module that users of Savvy will use *)
-module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
+module OAuth2Client (Storage : Storage.STORAGE_UNIT with type value = (string * config)) : OAUTH2_CLIENT = struct
   (* This is a helper function to construct the necessary auth url to pass to the user agent *)
   let get_authorization_url ~config =
     match config with
@@ -234,7 +198,7 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
   
   let exchange_code_for_token state code =
     match Storage.get state with
-    | Some (verifier, stored_config, _expires) -> begin
+    | Some ((verifier, stored_config), _expires) -> begin
       Storage.remove state;
       match stored_config with
       | AuthorizationCodeConfig config -> begin
@@ -405,34 +369,6 @@ module OAuth2Client (Storage : STORAGE_UNIT) : OAUTH2_CLIENT = struct
         end
       end
     | _ -> Lwt.return (Error "Refresh token only available for Refresh Token flow")
-(* Implementing refresh_token next *)
-
-(*
-  let refresh_token t =
-    match t.config with
-    | RefreshTokenConfig config -> begin
-      let body = [
-        ("grant_type", ["refresh_token"]);
-        ("client_id", [config.client_id]);
-        ("client_secret", [config.client_secret]);
-        ("refresh_token", [config.refresh_token]);
-      ] @ (match config.scope with
-          | Some scope -> [("scope", [String.concat " " scope])]
-          | None -> []) in
-      let headers = Cohttp.Header.init_with "Content-Type" "application/x-www-form-urlencoded" in
-      Client.post_form ~headers ~params:body config.token_endpoint
-      >>= fun (_, body) ->
-      Cohttp_lwt.Body.to_string body
-      >>= fun body_str ->
-      match token_response_of_yojson (Yojson.Safe.from_string body_str) with
-      | Ok token -> Lwt.return token
-      | Error e -> begin
-        print_endline e;
-        Lwt.fail_with e
-        end
-      end
-    | _ -> failwith "Refresh token only available for Refresh Token flow" 
-*)
 
 (* Below are less common flows that will be made available later *)
 

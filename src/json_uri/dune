@@ -1,0 +1,6 @@
+(library
+ (name json_uri)
+ (public_name savvy.json_uri)
+ (libraries lwt cohttp-lwt-unix cryptokit)
+ (preprocess (pps ppx_deriving_yojson)))
+

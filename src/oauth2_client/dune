@@ -7,9 +7,10 @@
   cohttp-lwt
   cohttp-lwt-unix
   lwt
-  uri
-  yojson
   ppx_deriving_yojson.runtime
-  utils)
+  storage
+  uri
+  utils
+  yojson)
  (preprocess
   (pps ppx_deriving_yojson)))

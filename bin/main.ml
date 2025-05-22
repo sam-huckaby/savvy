@@ -4,7 +4,12 @@ open Cohttp_lwt_unix
 open Savvy
 
 (* leverage the basic in-memory storage for demo purposes *)
-module Client = OAuth2Client(InMemoryStorage)
+module GenericInMemoryStorage = Storage.MakeInMemoryStorage(DefaultInMemoryStorage)
+module Client = OAuth2Client(GenericInMemoryStorage)
+
+(* leverage the basic in-memory storage for demo purposes (GitHub edition) *)
+module GitHubInMemoryStorage = Storage.MakeInMemoryStorage(GitHubInMemoryStorage)
+module GitHub = GitHubClient(GitHubInMemoryStorage)
 
 (* A custom module might look something like this: *)
 (*
@@ -112,6 +117,26 @@ let callback _conn req _body =
             Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()      (* Get our refresh_token (maybe in memory, in the session, etc *)
           end
         | Error message -> Server.respond_string ~status:`OK ~body:("There was an error: " ^ message) ()
+    end
+  | "/github" -> begin
+    let config = Github.GithubOauthConfig {
+      client_id = "your-client-id";
+      client_secret = "your-client-secret";
+      redirect_uri = Json_uri.of_string "your-github-callback-url";
+      scope = ["user" ; "repo"];
+      login = Some "my-user";
+      (* While the spec lists allow_signup as a string, it ultimately just evaluates to true or false *)
+      (* See here for more info: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps *)
+      allow_signup = Some true; 
+      prompt = No_Prompt; (* can force the account picker to appear if Select_Account is passed*)
+    } in
+    match GitHub.get_authorization_url ~config with
+    | Ok (url, _state) -> Server.respond_string ~status:`OK ~body:("<a styles='padding: 4px; background-color: \"black\"; color: \"white\" border-radius: 4px;' href='" ^ Uri.to_string url ^ "'>Authenticate with GitHub</a>") ()
+    | Error message -> Server.respond_string ~status:`OK ~body:("You've got problems: " ^ message) ()
+    end
+  | "/github-callback" -> begin
+      Server.respond_string ~status:`OK ~body:("You did it!") ()
+      (* Something needs to happen here *)
     end
   | _ -> begin
       (* Handle unknown paths *)

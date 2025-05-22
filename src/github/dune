@@ -1,8 +1,9 @@
 (library
- (name savvy)
- (public_name savvy)
+ (name github)
+ (public_name savvy.github)
  (libraries
-   github
+   cohttp-lwt-unix
+   json_uri
    lwt
    oauth2_client
    storage

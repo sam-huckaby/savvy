@@ -1,6 +1,7 @@
 open Savvy
 
-module Client = OAuth2Client (InMemoryStorage)
+module GenericInMemoryStorage = Storage.MakeInMemoryStorage(DefaultInMemoryStorage)
+module Client = OAuth2Client (GenericInMemoryStorage)
 
 let () =
   print_endline "===========================================================================";

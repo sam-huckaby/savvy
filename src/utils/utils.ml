@@ -21,3 +21,12 @@ let form_encode p =
   p |> List.map (fun (k,v) -> Printf.sprintf "%s=%s" k v)
   |> String.concat "&"
   |> Cohttp_lwt.Body.of_string
+
+module Uri = struct
+  include Uri
+  let to_yojson uri = `String (Uri.to_string uri)
+  let of_yojson = function
+    | `String s -> Ok (Uri.of_string s)
+    | _ -> Error "expected string for Uri.t"
+end
+

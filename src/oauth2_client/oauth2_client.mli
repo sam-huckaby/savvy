@@ -49,7 +49,7 @@ type refresh_token_config = {
   token_endpoint: Uri.t;
   refresh_token: string;
   scope: string list option;
-  token_auth_method: (token_auth_method [@default Basic]);
+  token_auth_method: token_auth_method;
 } [@@deriving yojson]
 
 type config =
@@ -76,17 +76,10 @@ type device_code_response = {
   interval: int;
 } [@@deriving yojson]
 
-(* Any user-defined storage implementation must have at least these three methods *)
-module type STORAGE_UNIT =
-  sig 
-    type t
-    (* When implementing this interface, I recommend doing a clean out of stale values in get *)
-    val get: string -> ( string * config * float ) option
-    val remove: string -> unit
-    val update: string -> ( string * config ) -> unit
-  end
-
-module InMemoryStorage : STORAGE_UNIT
+module DefaultInMemoryStorage : sig
+  type value = string * config
+  val ttl : float
+end
 
 module type OAUTH2_CLIENT =
   sig
@@ -97,5 +90,5 @@ module type OAUTH2_CLIENT =
   (* Additional flows handled later *)
 end
 
-module OAuth2Client (_ : STORAGE_UNIT) : OAUTH2_CLIENT
+module OAuth2Client (_ : Storage.STORAGE_UNIT with type value = (string * config)) : OAUTH2_CLIENT
 
