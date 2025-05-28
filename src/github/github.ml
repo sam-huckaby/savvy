@@ -3,6 +3,8 @@
         - Create URL for the developer to put in a button
         - Create a token exchange method
 *)
+open Lwt.Infix
+open Cohttp_lwt_unix
 
 type github_prompt =
   | No_Prompt
@@ -30,6 +32,49 @@ type github_oauth_config = {
   prompt: github_prompt;
 } [@@deriving yojson]
 
+type token_response = {
+  access_token: string;
+  token_type: string;
+  expires_in: (int option [@default None]);
+  refresh_token: (string option [@default None]);
+  scope: (string option [@default None]);
+} [@@deriving yojson]
+
+type token_error_code =
+  | Invalid_Request
+  | Invalid_Client
+  | Invalid_Grant
+  | Unauthorized_Client
+  | Unsupported_Grant_Type
+  | Invalid_Scope
+  | Invalid_Token
+
+let token_error_code_to_yojson = function
+  | Invalid_Request -> `String "invalid_request"
+  | Invalid_Client -> `String "invalid_client"
+  | Invalid_Grant -> `String "invalid_grant"
+  | Unauthorized_Client -> `String "unauthorized_client"
+  | Unsupported_Grant_Type -> `String "unsupported_grant_type"
+  | Invalid_Scope -> `String "invalid_scope"
+  | Invalid_Token -> `String "invalid_token"
+
+let token_error_code_of_yojson = function
+  | `String "invalid_request" -> Ok Invalid_Request
+  | `String "invalid_client" -> Ok Invalid_Client
+  | `String "invalid_grant" -> Ok Invalid_Grant
+  | `String "unauthorized_client" -> Ok Unauthorized_Client
+  | `String "unsupported_grant_type" -> Ok Unsupported_Grant_Type
+  | `String "invalid_scope" -> Ok Invalid_Scope
+  | `String "invalid_token" -> Ok Invalid_Token
+  | `String _ -> Ok Invalid_Request (* Default to Basic for unknown values *)
+  | _ -> Error "expected string for error code"
+
+type token_error = {
+  error: token_error_code;
+  error_description: string;
+  error_uri: (Json_uri.t option [@default None]);
+} [@@deriving yojson]
+
 type config =
   | GithubOauthConfig of github_oauth_config
 [@@deriving yojson]
@@ -39,14 +84,10 @@ module DefaultInMemoryStorage = struct
   let ttl = 3600.0
 end
 
-(* NOTE: When you wire in the auth request and token request, use the below values *)
-(*
-  token_endpoint: Uri.t; (* May always be: https://github.com/login/oauth/access_token *)
-*)
-
 module type GITHUB_CLIENT =
 sig
   val get_authorization_url : config:config -> ((Uri.t * string), string) result
+  val exchange_code_for_token : string -> string -> (token_response, string) result Lwt.t
 end
 
 module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : GITHUB_CLIENT = struct
@@ -80,4 +121,42 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
       let url = Uri.add_query_params' (Uri.of_string "https://github.com/login/oauth/authorize") params in
       Ok (url, state)
       end
+  let exchange_code_for_token state code =
+    match Storage.get state with
+    | Some ((stored_config), _expires) -> begin
+      Storage.remove state;
+      match stored_config with
+      | GithubOauthConfig config -> begin
+        let params = [
+                ("client_id", config.client_id);
+                ("client_secret", config.client_secret);
+                ("code", code);
+                ("redirect_uri", Json_uri.to_string config.redirect_uri);
+        ] in
+        let body = Utils.form_encode params in
+        Client.post ~body (Uri.of_string "https://github.com/login/oauth/access_token")
+        >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
+        >>= fun body_str ->
+        (* This decoder is created by @@deriving yojson *)
+        let json = Yojson.Safe.from_string body_str in
+        match token_response_of_yojson json with
+        | Ok token -> begin
+          Lwt.return (Ok token)
+          end
+        | Error _ -> begin
+          match token_error_of_yojson json with
+          | Ok error -> begin
+            print_endline error.error_description;
+            Lwt.return (Error error.error_description)
+            end
+          | Error e -> begin
+            print_endline e;
+            Lwt.return (Error e)
+            end
+          end
+        end
+      (* Uncomment when device flow is added (someday) (maybe) *)
+      (*| _ -> Lwt.return (Error "Code exchange only available for Authorization Code flow")*)
+      end
+    | None -> Lwt.return (Error "State value did not match a known session")
 end

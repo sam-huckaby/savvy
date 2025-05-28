@@ -15,6 +15,14 @@ type github_oauth_config = {
   prompt: github_prompt;
 } [@@deriving yojson]
 
+type token_response = {
+  access_token: string;
+  token_type: string;
+  expires_in: int option;
+  refresh_token: string option;
+  scope: string option;
+} [@@deriving yojson]
+
 type config =
   | GithubOauthConfig of github_oauth_config
 [@@deriving yojson]
@@ -27,6 +35,7 @@ end
 module type GITHUB_CLIENT =
 sig
   val get_authorization_url : config:config -> ((Uri.t * string), string) result
+  val exchange_code_for_token : string -> string -> (token_response, string) result Lwt.t
 end
 
 module GitHubClient (_ : Storage.STORAGE_UNIT with type value = config) : GITHUB_CLIENT

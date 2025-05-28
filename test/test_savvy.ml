@@ -1,7 +1,12 @@
 open Savvy
 
+(* leverage the basic in-memory storage for demo purposes *)
 module GenericInMemoryStorage = Storage.MakeInMemoryStorage(DefaultInMemoryStorage)
-module Client = OAuth2Client (GenericInMemoryStorage)
+module Client = OAuth2Client(GenericInMemoryStorage)
+
+(* leverage the basic in-memory storage for demo purposes (GitHub edition) *)
+module GitHubInMemoryStorage = Storage.MakeInMemoryStorage(GitHubInMemoryStorage)
+module GitHub = GitHubClient(GitHubInMemoryStorage)
 
 let () =
   print_endline "===========================================================================";
@@ -129,4 +134,22 @@ let () =
   } in
   match Client.get_authorization_url ~config with
   | Ok (auth_url, _state, _code_verifier) -> Printf.printf "Auth URL: %s\n Generated State: %s\n Verifier Used: %s\n\n\n" (Uri.to_string auth_url) _state _code_verifier
+  | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
+
+let () =
+  print_endline "===========================================================================";
+  print_endline "No scopes requested";
+  let config = Github.GithubOauthConfig {
+      client_id = "your-client-id";
+      client_secret = "your-client-secret";
+      redirect_uri = Json_uri.of_string "http://localhost:8080/github-callback";
+      scope = ["user" ; "repo"];
+      login = Some "my-user";
+      (* While the spec lists allow_signup as a string, it ultimately just evaluates to true or false *)
+      (* See here for more info: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps *)
+      allow_signup = Some true; 
+      prompt = No_Prompt; (* can force the account picker to appear if Select_Account is passed*)
+    } in
+  match GitHub.get_authorization_url ~config with
+  | Ok (url, _state) -> Printf.printf "Auth URL: %s\n Generated State: %s\n\n\n" (Uri.to_string url) _state
   | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)

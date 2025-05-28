@@ -122,7 +122,7 @@ let callback _conn req _body =
     let config = Github.GithubOauthConfig {
       client_id = "your-client-id";
       client_secret = "your-client-secret";
-      redirect_uri = Json_uri.of_string "your-github-callback-url";
+      redirect_uri = Json_uri.of_string "http://localhost:8080/github-callback";
       scope = ["user" ; "repo"];
       login = Some "my-user";
       (* While the spec lists allow_signup as a string, it ultimately just evaluates to true or false *)
@@ -135,7 +135,32 @@ let callback _conn req _body =
     | Error message -> Server.respond_string ~status:`OK ~body:("You've got problems: " ^ message) ()
     end
   | "/github-callback" -> begin
-      Server.respond_string ~status:`OK ~body:("You did it!") ()
+      let uri = Request.uri req in
+      let code_query = Uri.get_query_param uri "code" in
+      let state_query = Uri.get_query_param uri "state" in
+      match state_query with
+      | Some state -> begin
+        match code_query with
+        | Some code -> begin
+          GitHub.exchange_code_for_token state code
+          >>= fun token_result ->
+            match token_result with
+            | Ok token -> begin
+            let token_info = 
+              "<p>Auth was successful!</p>" ^
+              "<p>Access Token: " ^ token.access_token ^ "</p>" ^
+              (match token.refresh_token with
+                | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
+                | None -> "") in
+            Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()
+          end
+            | Error message -> Server.respond_string ~status:`OK ~body:("Authorization failed: " ^ message) ()
+          end
+        | None ->
+          Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
+        end
+      | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
+      (*Server.respond_string ~status:`OK ~body:("You did it!") ()*)
       (* Something needs to happen here *)
     end
   | _ -> begin
