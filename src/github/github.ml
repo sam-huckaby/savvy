@@ -34,13 +34,12 @@ type github_oauth_config = {
 
 type token_response = {
   access_token: string;
-  token_type: string;
-  expires_in: (int option [@default None]);
-  refresh_token: (string option [@default None]);
   scope: (string option [@default None]);
+  token_type: string;
 } [@@deriving yojson]
 
 type token_error_code =
+  | Incorrect_Client_Credentials
   | Invalid_Request
   | Invalid_Client
   | Invalid_Grant
@@ -50,6 +49,7 @@ type token_error_code =
   | Invalid_Token
 
 let token_error_code_to_yojson = function
+  | Incorrect_Client_Credentials -> `String "incorrect_client_credentials"
   | Invalid_Request -> `String "invalid_request"
   | Invalid_Client -> `String "invalid_client"
   | Invalid_Grant -> `String "invalid_grant"
@@ -59,6 +59,7 @@ let token_error_code_to_yojson = function
   | Invalid_Token -> `String "invalid_token"
 
 let token_error_code_of_yojson = function
+  | `String "incorrect_client_credentials" -> Ok Incorrect_Client_Credentials
   | `String "invalid_request" -> Ok Invalid_Request
   | `String "invalid_client" -> Ok Invalid_Client
   | `String "invalid_grant" -> Ok Invalid_Grant
@@ -137,8 +138,15 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
         Client.post ~body (Uri.of_string "https://github.com/login/oauth/access_token")
         >>= fun (_, body) -> Cohttp_lwt.Body.to_string body
         >>= fun body_str ->
+
+        let decoded = Utils.form_decode body_str in
+        (match Hashtbl.find_opt decoded "error" with
+        | Some desc -> Printf.printf "Key 'error': \"%s\"\n" desc
+        | None -> Printf.printf "Key 'error': Not found\n");
+
         (* This decoder is created by @@deriving yojson *)
         let json = Yojson.Safe.from_string body_str in
+
         match token_response_of_yojson json with
         | Ok token -> begin
           Lwt.return (Ok token)

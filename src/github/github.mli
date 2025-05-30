@@ -17,10 +17,8 @@ type github_oauth_config = {
 
 type token_response = {
   access_token: string;
-  token_type: string;
-  expires_in: int option;
-  refresh_token: string option;
   scope: string option;
+  token_type: string;
 } [@@deriving yojson]
 
 type config =

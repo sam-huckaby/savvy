@@ -148,10 +148,7 @@ let callback _conn req _body =
             | Ok token -> begin
             let token_info = 
               "<p>Auth was successful!</p>" ^
-              "<p>Access Token: " ^ token.access_token ^ "</p>" ^
-              (match token.refresh_token with
-                | Some refresh_token -> "<p>Refresh Token: " ^ refresh_token ^ "</p>"
-                | None -> "") in
+              "<p>Access Token: " ^ token.access_token ^ "</p>" in
             Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()
           end
             | Error message -> Server.respond_string ~status:`OK ~body:("Authorization failed: " ^ message) ()
