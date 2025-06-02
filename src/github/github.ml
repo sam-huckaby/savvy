@@ -158,12 +158,16 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
         | None, Some token -> begin
           Lwt.return (Ok { access_token = token ; scope = scope_val ; token_type = token_type_val })
           end
-        | Some _, Some _ -> begin
-          print_endline "Ya got problems";
-          Lwt.return (Error "No token received")
+        | Some err, Some token -> begin
+          print_endline "Both an error and a token were received and this is very strange";
+          print_endline "Error:";
+          print_endline err;
+          print_endline error_desc_val;
+          print_endline error_uri_val;
+          Lwt.return (Ok { access_token = token ; scope = scope_val ; token_type = token_type_val })
           end
         | None, None -> begin
-          print_endline "Ya got different problems";
+          print_endline "No error was returned, but also no token. Suspicious.";
           Lwt.return (Error "No token received")
           end
         end
