@@ -129,10 +129,10 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
       match stored_config with
       | GithubOauthConfig config -> begin
         let params = [
-                ("client_id", config.client_id);
-                ("client_secret", config.client_secret);
-                ("code", code);
-                ("redirect_uri", Json_uri.to_string config.redirect_uri);
+          ("client_id", config.client_id);
+          ("client_secret", config.client_secret);
+          ("code", code);
+          ("redirect_uri", Json_uri.to_string config.redirect_uri);
         ] in
         let body = Utils.form_encode params in
         Client.post ~body (Uri.of_string "https://github.com/login/oauth/access_token")
@@ -140,31 +140,33 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
         >>= fun body_str ->
 
         let decoded = Utils.form_decode body_str in
-        (match Hashtbl.find_opt decoded "error" with
-        | Some desc -> Printf.printf "Key 'error': \"%s\"\n" desc
-        | None -> Printf.printf "Key 'error': Not found\n");
+        let token_val = Hashtbl.find_opt decoded "access_token" in
+        let scope_val = Hashtbl.find_opt decoded "scope" in
+        let token_type_val = Option.value ~default:"" (Hashtbl.find_opt decoded "token_type") in
+        let error_val = Hashtbl.find_opt decoded "error" in
+        let error_desc_val = Option.value ~default:"" (Hashtbl.find_opt decoded "error_description") in
+        let error_uri_val = Option.value ~default:"" (Hashtbl.find_opt decoded "error_uri") in
 
-        (* This decoder is created by @@deriving yojson *)
-        let json = Yojson.Safe.from_string body_str in
-
-        match token_response_of_yojson json with
-        | Ok token -> begin
-          Lwt.return (Ok token)
+        match error_val, token_val with
+        | Some err, None -> begin
+          print_endline "Error:";
+          print_endline err;
+          print_endline error_desc_val;
+          print_endline error_uri_val;
+          Lwt.return (Error err)
           end
-        | Error _ -> begin
-          match token_error_of_yojson json with
-          | Ok error -> begin
-            print_endline error.error_description;
-            Lwt.return (Error error.error_description)
-            end
-          | Error e -> begin
-            print_endline e;
-            Lwt.return (Error e)
-            end
+        | None, Some token -> begin
+          Lwt.return (Ok { access_token = token ; scope = scope_val ; token_type = token_type_val })
+          end
+        | Some _, Some _ -> begin
+          print_endline "Ya got problems";
+          Lwt.return (Error "No token received")
+          end
+        | None, None -> begin
+          print_endline "Ya got different problems";
+          Lwt.return (Error "No token received")
           end
         end
-      (* Uncomment when device flow is added (someday) (maybe) *)
-      (*| _ -> Lwt.return (Error "Code exchange only available for Authorization Code flow")*)
       end
     | None -> Lwt.return (Error "State value did not match a known session")
 end
