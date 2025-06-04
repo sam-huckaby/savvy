@@ -153,3 +153,4 @@ let () =
   match GitHub.get_authorization_url ~config with
   | Ok (url, _state) -> Printf.printf "Auth URL: %s\n Generated State: %s\n\n\n" (Uri.to_string url) _state
   | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
+

@@ -38,6 +38,7 @@ type token_response = {
   token_type: string;
 } [@@deriving yojson]
 
+(* NOTE: Some of these may never be used by GitHub, they're just copied from OAuth2 *)
 type token_error_code =
   | Incorrect_Client_Credentials
   | Invalid_Request
@@ -48,6 +49,7 @@ type token_error_code =
   | Invalid_Scope
   | Invalid_Token
 
+(* NOTE: Some of these may never be used by GitHub, they're just copied from OAuth2 *)
 let token_error_code_to_yojson = function
   | Incorrect_Client_Credentials -> `String "incorrect_client_credentials"
   | Invalid_Request -> `String "invalid_request"
@@ -58,6 +60,7 @@ let token_error_code_to_yojson = function
   | Invalid_Scope -> `String "invalid_scope"
   | Invalid_Token -> `String "invalid_token"
 
+(* NOTE: Some of these may never be used by GitHub, they're just copied from OAuth2 *)
 let token_error_code_of_yojson = function
   | `String "incorrect_client_credentials" -> Ok Incorrect_Client_Credentials
   | `String "invalid_request" -> Ok Invalid_Request
@@ -70,6 +73,7 @@ let token_error_code_of_yojson = function
   | `String _ -> Ok Invalid_Request (* Default to Basic for unknown values *)
   | _ -> Error "expected string for error code"
 
+(* NOTE: GitHub returns form-encoded values not JSON, this is primarily for reference *)
 type token_error = {
   error: token_error_code;
   error_description: string;
