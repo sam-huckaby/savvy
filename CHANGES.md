@@ -1,4 +1,10 @@
-## 0.3.0
+## 0.4.0 (2025-06-04)
+
+### Added 
+
+- Implemented GitHub integration for Savvy! You can now authenticate with GitHub as your source of truth.
+
+## 0.3.0 (2025-05-04)
 
 ### Added
 
