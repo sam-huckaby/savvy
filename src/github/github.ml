@@ -6,6 +6,8 @@
 open Lwt.Infix
 open Cohttp_lwt_unix
 
+let ( let* ) = Lwt.bind
+
 type github_prompt =
   | No_Prompt
   | Select_Account
@@ -30,6 +32,55 @@ type github_oauth_config = {
   login: string option;
   allow_signup: bool option;
   prompt: github_prompt;
+} [@@deriving yojson]
+
+type github_plan = {
+  name: string;
+  space: int;
+  private_repos: int;
+  collaborators: int;
+} [@@deriving yojson]
+
+type user_response = {
+  login: string;
+  id: int;
+  node_id: string;
+  avatar_url: Json_uri.t;
+  gravatar_id: string;
+  url: Json_uri.t;
+  html_url: Json_uri.t;
+  followers_url: Json_uri.t;
+  following_url: Json_uri.t;
+  gists_url: Json_uri.t;
+  starred_url: Json_uri.t;
+  subscriptions_url: Json_uri.t;
+  organizations_url: Json_uri.t;
+  repos_url: Json_uri.t;
+  events_url: Json_uri.t;
+  received_events_url: Json_uri.t;
+  user_type: string; (* NOTE: comes from github as "type" *)
+  site_admin: bool;
+  name: string;
+  company: string;
+  blog: Json_uri.t;
+  location: string;
+  email: string;
+  hireable: bool;
+  bio: string;
+  twitter_username: string;
+  public_repos: int;
+  public_gists: int;
+  followers: int;
+  following: int;
+  created_at: string;
+  updated_at: string;
+  private_gists: int;
+  total_private_repos: int;
+  owned_private_repos: int;
+  disk_usage: int;
+  collaborators: int;
+  two_factor_authentication: bool;
+  plan: github_plan
 } [@@deriving yojson]
 
 type token_response = {
@@ -126,6 +177,7 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
       let url = Uri.add_query_params' (Uri.of_string "https://github.com/login/oauth/authorize") params in
       Ok (url, state)
       end
+
   let exchange_code_for_token state code =
     match Storage.get state with
     | Some ((stored_config), _expires) -> begin
@@ -177,4 +229,28 @@ module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : 
         end
       end
     | None -> Lwt.return (Error "State value did not match a known session")
+
+  let get_user_info token =
+    let headers = Cohttp.Header.init () in
+    let headers = Cohttp.Header.add headers "Accept" "application/vnd.github+json" in
+    let headers = Cohttp.Header.add headers "Authorization" ("Bearer " ^ token.access_token) in
+    let* (resp, body) = Cohttp_lwt_unix.Client.get ~headers (Uri.of_string "https://api.github.com/user") in
+    let code = resp
+      |> Cohttp.Response.status
+      |> Cohttp.Code.code_of_status in
+    if Cohttp.Code.is_success code
+    then
+      let* body_str = Cohttp_lwt.Body.to_string body in
+      (* This decoder is created by @@deriving yojson *)
+      let json = Yojson.Safe.from_string body_str in
+      match user_response_of_yojson json with
+      | Ok user -> begin
+        Lwt.return (Ok user)
+        end
+      | Error _ -> begin
+          Lwt.return (Error "Failed to unwrap user object")
+        end
+    else
+      Lwt.return (Error "Failed to successfully retrieve user")
+
 end
