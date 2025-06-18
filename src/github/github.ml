@@ -144,6 +144,7 @@ module type GITHUB_CLIENT =
 sig
   val get_authorization_url : config:config -> ((Uri.t * string), string) result
   val exchange_code_for_token : string -> string -> (token_response, string) result Lwt.t
+  val get_user_info : token_response -> (user_response, string) result Lwt.t
 end
 
 module GitHubClient (Storage : Storage.STORAGE_UNIT with type value = config) : GITHUB_CLIENT = struct
