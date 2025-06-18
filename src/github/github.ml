@@ -58,16 +58,18 @@ type user_response = {
   repos_url: Json_uri.t;
   events_url: Json_uri.t;
   received_events_url: Json_uri.t;
-  user_type: string; (* NOTE: comes from github as "type" *)
+  user_type: string; [@key "type"] (* NOTE: comes from github as "type" *)
+  user_view_type: string;
   site_admin: bool;
   name: string;
   company: string;
   blog: Json_uri.t;
   location: string;
-  email: string;
-  hireable: bool;
-  bio: string;
+  email: string option;
+  hireable: bool option;
+  bio: string option;
   twitter_username: string;
+  notification_email: string option;
   public_repos: int;
   public_gists: int;
   followers: int;
