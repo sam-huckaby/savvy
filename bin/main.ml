@@ -11,6 +11,10 @@ module Client = OAuth2Client(GenericInMemoryStorage)
 module GitHubInMemoryStorage = Storage.MakeInMemoryStorage(GitHubInMemoryStorage)
 module GitHub = GitHubClient(GitHubInMemoryStorage)
 
+(* leverage the basic in-memory storage for demo purposes (Facebook edition) *)
+module FacebookInMemoryStorage = Storage.MakeInMemoryStorage(FacebookInMemoryStorage)
+module Facebook = FacebookClient(FacebookInMemoryStorage)
+
 (* A custom module might look something like this: *)
 (*
 module CustomStorage : STORAGE_UNIT = struct
@@ -159,6 +163,41 @@ let callback _conn req _body =
       | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
       (*Server.respond_string ~status:`OK ~body:("You did it!") ()*)
       (* Something needs to happen here *)
+    end
+  | "/facebook" -> begin
+    let config = Facebook.FacebookOauthConfig {
+      client_id = "your-client-id";
+      client_secret = "your-client-secret";
+      redirect_uri = Json_uri.of_string "http://localhost:8080/facebook-callback";
+      scope = ["public_profile"; "email"];
+    } in
+    match Facebook.get_authorization_url ~config with
+    | Ok (url, _state) -> Server.respond_string ~status:`OK ~body:("<a styles='padding: 4px; background-color: \"#1877F2\"; color: \"white\" border-radius: 4px;' href='" ^ Uri.to_string url ^ "'>Authenticate with Facebook</a>") ()
+    | Error message -> Server.respond_string ~status:`OK ~body:("You've got problems: " ^ message) ()
+    end
+  | "/facebook-callback" -> begin
+      let uri = Request.uri req in
+      let code_query = Uri.get_query_param uri "code" in
+      let state_query = Uri.get_query_param uri "state" in
+      match state_query with
+      | Some state -> begin
+        match code_query with
+        | Some code -> begin
+          Facebook.exchange_code_for_token state code
+          >>= fun token_result ->
+            match token_result with
+            | Ok token -> begin
+            let token_info = 
+              "<p>Auth was successful!</p>" ^
+              "<p>Access Token: " ^ token.access_token ^ "</p>" in
+            Server.respond_string ~status:`OK ~body:(token_info ^ "<a href='/'>Back to Login</a>") ()
+          end
+            | Error message -> Server.respond_string ~status:`OK ~body:("Authorization failed: " ^ message) ()
+          end
+        | None ->
+          Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
+        end
+      | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
     end
   | _ -> begin
       (* Handle unknown paths *)

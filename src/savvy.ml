@@ -3,8 +3,11 @@
 module type STORAGE_UNIT = Storage.STORAGE_UNIT
 module type OAUTH2_CLIENT = Oauth2_client.OAUTH2_CLIENT
 module type GITHUB_CLIENT = Github.GITHUB_CLIENT
+module type FACEBOOK_CLIENT = Facebook.FACEBOOK_CLIENT
 
 module DefaultInMemoryStorage = Oauth2_client.DefaultInMemoryStorage
 module GitHubInMemoryStorage = Github.DefaultInMemoryStorage
+module FacebookInMemoryStorage = Facebook.DefaultInMemoryStorage
 module OAuth2Client = Oauth2_client.OAuth2Client
 module GitHubClient = Github.GitHubClient
+module FacebookClient = Facebook.FacebookClient
