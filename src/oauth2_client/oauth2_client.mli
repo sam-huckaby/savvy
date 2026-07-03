@@ -65,7 +65,7 @@ type token_response = {
   expires_in: int option;
   refresh_token: string option;
   scope: string option;
-} [@@deriving yojson { strict = false }]
+} [@@deriving yojson { strict = false }] (* Client must ignore unrecognized fields, per https://datatracker.ietf.org/doc/html/rfc6749#section-5.1 *)
 
 type device_code_response = {
   device_code: string;
