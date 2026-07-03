@@ -103,7 +103,7 @@ type token_response = {
   expires_in: (int option [@default None]);
   refresh_token: (string option [@default None]);
   scope: (string option [@default None]);
-} [@@deriving yojson]
+} [@@deriving yojson { strict = false }]
 
 type token_error_code =
   | Invalid_Request
@@ -422,4 +422,3 @@ module OAuth2Client (Storage : Storage.STORAGE_UNIT with type value = (string * 
     | _ -> failwith "Device token polling only available for Device Code flow"
  *)  
 end
-

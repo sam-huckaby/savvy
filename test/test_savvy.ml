@@ -9,6 +9,27 @@ module GitHubInMemoryStorage = Storage.MakeInMemoryStorage(GitHubInMemoryStorage
 module GitHub = GitHubClient(GitHubInMemoryStorage)
 
 let () =
+  let json =
+    Yojson.Safe.from_string
+      {|{
+        "access_token":"abc",
+        "token_type":"Bearer",
+        "expires_in":3600,
+        "refresh_token":"xyz",
+        "unknown_field":"ignored",
+        "scope":"read"
+      }|}
+  in
+  match Oauth2_client.token_response_of_yojson json with
+  | Ok token ->
+    assert (token.access_token = "abc");
+    assert (token.token_type = "Bearer");
+    assert (token.expires_in = Some 3600);
+    assert (token.refresh_token = Some "xyz");
+    assert (token.scope = Some "read")
+  | Error message -> failwith ("Unexpected token response parse failure: " ^ message)
+
+let () =
   print_endline "===========================================================================";
   print_endline "Most secure Auth Code Setup";
   let config = Oauth2_client.AuthorizationCodeConfig {
@@ -153,4 +174,3 @@ let () =
   match GitHub.get_authorization_url ~config with
   | Ok (url, _state) -> Printf.printf "Auth URL: %s\n Generated State: %s\n\n\n" (Uri.to_string url) _state
   | Error message -> failwith ("THIS SHOULD HAVE WORKED: " ^ message)
-

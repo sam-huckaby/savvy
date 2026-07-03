@@ -65,7 +65,7 @@ type token_response = {
   expires_in: int option;
   refresh_token: string option;
   scope: string option;
-} [@@deriving yojson]
+} [@@deriving yojson { strict = false }]
 
 type device_code_response = {
   device_code: string;
@@ -91,4 +91,3 @@ sig
 end
 
 module OAuth2Client (_ : Storage.STORAGE_UNIT with type value = (string * config)) : OAUTH2_CLIENT
-
