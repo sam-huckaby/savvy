@@ -1,3 +1,9 @@
+## 0.4.1 (2026-07-03)
+
+### Fixed
+
+- Ignore unrecognized fields in token responses.
+
 ## 0.4.0 (2025-06-04)
 
 ### Added 
@@ -24,4 +30,3 @@
 ### Changed
 
 - OAuth2Client now requires a storage interface to be passed into the constructor
-
