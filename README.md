@@ -77,3 +77,64 @@ match state_query with
 | None -> Server.respond_string ~status:`Bad_request ~body:"No code parameter provided" ()
 ```
 
+### GitHub OAuth (built-in provider module)
+
+```ocaml
+(* Example routes from bin/main.ml *)
+module GitHubInMemoryStorage = Storage.MakeInMemoryStorage(GitHubInMemoryStorage)
+module GitHub = GitHubClient(GitHubInMemoryStorage)
+
+(* /github *)
+let config = Github.GithubOauthConfig {
+  client_id = "your-client-id";
+  client_secret = "your-client-secret";
+  redirect_uri = Json_uri.of_string "http://localhost:8080/github-callback";
+  scope = ["user" ; "repo"];
+  login = Some "my-user";
+  allow_signup = Some true;
+  prompt = No_Prompt;
+} in
+match GitHub.get_authorization_url ~config with
+| Ok (url, _state) -> (* redirect/link to url *)
+| Error message -> (* handle error *)
+```
+
+### Facebook OAuth (new built-in provider module)
+
+By default, Savvy uses an in-memory storage implementation for the Authorization Code state/config handoff. For production, implement your own storage that matches `Storage.STORAGE_UNIT` and pass it to `Facebook.FacebookClient`.
+
+```ocaml
+open Savvy
+
+(* Choose storage: in-memory for dev, custom for prod *)
+module FacebookInMemoryStorage = Storage.MakeInMemoryStorage(FacebookInMemoryStorage)
+module Facebook = FacebookClient(FacebookInMemoryStorage)
+
+(* /facebook *)
+let config = Facebook.FacebookOauthConfig {
+  client_id = Sys.getenv_opt "FACEBOOK_CLIENT_ID" |> Option.value ~default:"your-client-id";
+  client_secret = Sys.getenv_opt "FACEBOOK_CLIENT_SECRET" |> Option.value ~default:"your-client-secret";
+  redirect_uri = Json_uri.of_string "http://localhost:8080/facebook-callback";
+  scope = ["public_profile"; "email"];
+} in
+match Facebook.get_authorization_url ~config with
+| Ok (auth_url, state) -> (* redirect/link to auth_url; persist state if needed *)
+| Error e -> (* handle error *)
+
+(* /facebook-callback *)
+match (state_param, code_param) with
+| (Some state, Some code) -> begin
+    Facebook.exchange_code_for_token state code
+    >>= function
+    | Ok token -> Facebook.get_user_info token
+    | Error e -> Lwt.return (Error e)
+  end
+| _ -> Lwt.return (Error "Missing params")
+```
+
+Notes:
+- The Facebook authorization URL is `https://www.facebook.com/v20.0/dialog/oauth`.
+- The token exchange endpoint is `https://graph.facebook.com/v20.0/oauth/access_token`.
+- `Facebook.get_user_info` calls `https://graph.facebook.com/me?fields=id,name,email` with the access token.
+
+

@@ -1,11 +1,13 @@
 (library
- (name savvy)
- (public_name savvy)
+ (name facebook)
+ (public_name savvy.facebook)
  (libraries
-   facebook
-   github
+   cohttp-lwt-unix
+   json_uri
    lwt
    oauth2_client
    storage
+   utils
+   yojson
  )
  (preprocess (pps ppx_deriving_yojson)))
